@@ -1,45 +1,38 @@
-**Edit a file, create a new file, and clone from Bitbucket in under 2 minutes**
+**Webtally v4**
 
-When you're done, you can delete the content in this README and update the file with details for others getting started with your repository.
-
-*We recommend that you open this README in another tab as you perform the tasks below. You can [watch our video](https://youtu.be/0ocf7u76WSo) for a full demo of all the steps in this tutorial. Open the video in a new tab to avoid leaving Bitbucket.*
+This is the spiritual sucessor to my previous webtally project. Now ported over to node from php, yay!
 
 ---
 
-## Edit a file
+## Features
 
-You’ll start by editing this README file to learn how to edit a file in Bitbucket.
+As of v4 there are a whole host of new features.
 
-1. Click **Source** on the left side.
-2. Click the README.md link from the list of files.
-3. Click the **Edit** button.
-4. Delete the following text: *Delete this line to make a change to the README from Bitbucket.*
-5. After making your change, click **Commit** and then **Commit** again in the dialog. The commit page will open and you’ll see the change you just made.
-6. Go back to the **Source** page.
-
----
-
-## Create a file
-
-Next, you’ll add a new file to this repository.
-
-1. Click the **New file** button at the top of the **Source** page.
-2. Give the file a filename of **contributors.txt**.
-3. Enter your name in the empty file space.
-4. Click **Commit** and then **Commit** again in the dialog.
-5. Go back to the **Source** page.
-
-Before you move on, go ahead and explore the repository. You've already seen the **Source** page, but check out the **Commits**, **Branches**, and **Settings** pages.
+1. Multiserver support **More about this bellow**
+2. Local config file
+3. Saves data to local files
+4. Pretty terminal output and creates a log file
+5. Server seperated from UI (is this a feature?)
+6. Allows remote config and control of clients
 
 ---
 
-## Clone a repository
+## WIP
 
-Use these steps to clone from SourceTree, our client for using the repository command-line free. Cloning allows you to work on your files locally. If you don't yet have SourceTree, [download and install first](https://www.sourcetreeapp.com/). If you prefer to clone from the command line, see [Clone a repository](https://confluence.atlassian.com/x/4whODQ).
+Features yet to be implemented
 
-1. You’ll see the clone button under the **Source** heading. Click that button.
-2. Now click **Check out in SourceTree**. You may need to create a SourceTree account or log in.
-3. When you see the **Clone New** dialog in SourceTree, update the destination path and name if you’d like to and then click **Clone**.
-4. Open the directory you just created to see your repository’s files.
+1. Local database state saving
+2. Re-merge the ui into server...
+3. Server management UI
+4. Finish implementing busses and sources and their UI
+5. Client closest connection finding
 
-Now that you're more familiar with your Bitbucket repository, go ahead and add a new file locally. You can [push your change back to Bitbucket with SourceTree](https://confluence.atlassian.com/x/iqyBMg), or you can [add, commit,](https://confluence.atlassian.com/x/8QhODQ) and [push from the command line](https://confluence.atlassian.com/x/NQ0zDQ).
+---
+
+## Multiserver
+
+Details of how the multiserver system works
+
+1. Instances of the server can be pointed to each other for them to start syncing, they then act as a single server
+2. In the case of a server fail clients will switch over to the next available server
+3. Linked servers share connection details and states with all other clients and servers, so every connection learns of all servers
