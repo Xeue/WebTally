@@ -1,0 +1,39 @@
+{
+  "header": {
+    "fromID": "B_1639453725783_4.0",
+    "timestamp": 1639500096485,
+    "version": "4.0",
+    "type": "Browser",
+    "active": true,
+    "messageID": 1639500096485,
+    "recipients": ["ws2.chilton.tv/ws", "wss.chilton.tv/ws", "ws.chilton.tv/ws"]
+  },
+  "payload": {
+    "prodID": 2,
+    "command": "tally",
+    "serial": "B_1639453725783_4.0",
+    "action" = "configMode",
+    "config" = "camera",
+    "busses": {
+      "main": {
+        "2": {
+          "prog": false
+        }
+      }
+    },
+    "data": {
+      "ID": "B_1639453725783_4.0";
+      "camera": 1;
+    },
+    "servers": {
+      "ws2.chilton.tv/ws": {
+        "active": true,
+        "connected": true
+      },
+      "ws.chilton.tv/ws": {
+        "active": true,
+        "connected": true
+      }
+    }
+  }
+}
