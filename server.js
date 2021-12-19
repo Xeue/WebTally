@@ -2,6 +2,7 @@
 /*jshint esversion: 6 */
 import { WebSocketServer } from 'ws';
 import { WebSocket } from 'ws';
+import { createServer } from 'https';
 import { createRequire } from "module";
 import * as fs from 'fs';
 import * as readline from 'readline';
@@ -14,6 +15,10 @@ const require = createRequire(import.meta.url);
 const reader = require("readline-sync");
 
 const args = process.argv.slice(2);
+const version = "4.1";
+const type = "Server";
+const loadTime = new Date().getTime();
+const myID = `S_${loadTime}_${version}`;
 
 let configLocation = __dirname;
 let port = 443;
@@ -22,254 +27,236 @@ let loggingLevel = "W";
 let debugLineNum = false;
 let createLogFile = true;
 let argLoggingLevel;
+let ownHTTPserver = false;
 let dataBase;
+let certPath;
+let keyPath;
+let serverName = "WebTally Server v4";
 
-if (typeof args[0] !== "undefined") {
-  if (args[0] == ".") {
-    args[0] = "";
-  }
-  configLocation = __dirname+args[0];
-} else {
-  configLocation = __dirname;
-}
+let config;
+let state = {};
 
-if (typeof args[1] !== "undefined") {
-  argLoggingLevel = args[1];
-}
+var coreServer;
+var serverHTTPS;
 
 printHeader();
 
-let config;
-try {
-  config = require(configLocation+'/config.json');
-} catch (e) {
-  config = {};
-  log("Config could not be loaded, missing file or invalid JSON?", "E");
-  log("Creating new config file");
+loadArgs();
 
-  let port = reader.question("What port shall the server use: ");
-  let host = reader.question("What url/IP is the server connected to from: ");
-  let loggingLevel = reader.question("What logging level would you like? (A)ll (D)ebug (W)arnings (E)rror: ");
-  let debugLineNum = reader.question("Would you like to print line numbers in the logs? true/false: ");
-  let createLogFile = reader.question("Would you like to write the log to a file? true/false: ");
-  let otherHost = reader.question("If possible provide the url/ip of another server in the network: ");
+state = setUpStates(state);
 
-  config = {
-    "port":port,
-    "host":host,
-    "loggingLevel":loggingLevel,
-    "debugLineNum":debugLineNum,
-    "createLogFile":createLogFile,
-    "dataBase":false,
-    "otherServers":[]
-  };
-  if (otherHost !== "") {
-    config.otherServers[0] = otherHost;
+loadConfig();
+
+startServer();
+
+startLoops();
+
+function startServer() {
+  if (ownHTTPserver) {
+    serverHTTPS = startHTTPS();
+    log("Running as own HTTPS server and hosting UI internally");
+    coreServer = new WebSocketServer({ server: serverHTTPS });
+  } else {
+    log("Running as \x1b[33mstandalone\x1b[37m websocket server");
+    coreServer = new WebSocketServer({ port: port });
   }
-  fs.writeFile(configLocation+'/config.json', JSON.stringify(config), err => {
-    if (err) {
-      log("Could not write config file, running with entered details anyway", "E");
-    }
+
+  // Main websocket server functionality
+  coreServer.on('connection', function connection(socket) {
+    log("New connection established, sending it other severs list", "D");
+
+    // Sending server list
+    let payload = {};
+    payload.command = "server";
+    payload.servers = state.servers.getStatus();
+    sendData(socket, payload);
+
+    socket.pingStatus = "alive";
+
+    socket.on('message', function message(msgJSON) {
+      log('Received: '+msgJSON, "A");
+      let msgObj = {};
+      let pObj;
+      let hObj;
+      try {
+        msgObj = JSON.parse(msgJSON);
+        pObj = msgObj.payload;
+        hObj = msgObj.header;
+        if (typeof pObj.source == "undefined") {
+          pObj.source = "default";
+        }
+        switch (pObj.command) {
+          case "meta":
+            log('Received: '+msgJSON, "D");
+            socket.send("Received meta");
+            break;
+          case "register":
+            if (typeof socket.type == "undefined") {
+              socket.type = hObj.type;
+            }
+            if (typeof socket.ID == "undefined") {
+              socket.ID = hObj.fromID;
+            }
+            switch (hObj.type) {
+              case "Config":
+                log('\x1b[32m'+hObj.fromID+'\x1b[0m Registered as new config controller', "D");
+                break;
+              case "Server":
+                let address = pObj.address;
+                let name = pObj.name;
+                socket.address = address;
+                socket.name = name;
+                log("\x1b[32m"+hObj.fromID+'\x1b[0m Registered as new server', "D");
+                log("\x1b[32m"+address+"\x1b[0m Registered as new inbound server connection", "S");
+                state.servers.add(address);
+                state.servers.update(address, hObj, name);
+                break;
+              case "Admin":
+                log('\x1b[32m'+hObj.fromID+'\x1b[0m Registered as new admin controller', "D");
+                let payload = {};
+                payload.command = "server";
+                payload.servers = state.servers.getDetails("ALL");
+                payload.servers[host] = state.servers.getThisServer();
+                sendAdmins(makePacket(payload));
+                break;
+              default:
+                log("\x1b[32m"+hObj.fromID+"\x1b[0m Registered as new client", "D");
+                if (typeof pObj.data.camera !== "undefined") {
+                  socket.camera = pObj.data.camera;
+                }
+                sendConfigs(msgObj, socket);
+                sendServers(msgObj);
+                state.tally.updateClients();
+            }
+            break;
+          case "disconnect":
+            log("\x1b[31m"+pObj.data.ID+"\x1b[0m Connection closed", "D");
+            sendConfigs(msgObj, socket);
+            sendServers(msgObj);
+            break;
+          case "tally":
+            sendServers(msgObj);
+            sendClients(msgObj, socket);
+            state.tally.update(pObj.busses, pObj.source);
+            break;
+          case "config":
+            log("Config data is being sent to clients", "D");
+            if (socket.ID == hObj.fromID) {
+              sendSelf(msgObj, socket);
+            }
+            sendAll(msgObj, socket);
+            state.tally.updateClients();
+            break;
+          case "command":
+            log("A command is being sent to clients", "D");
+            sendAll(msgObj, socket);
+            break;
+          case "pong":
+            socket.pingStatus = "alive";
+            break;
+          case "ping":
+            socket.pingStatus = "alive";
+            let payload = {};
+            payload.command = "pong";
+            sendData(socket, payload);
+            break;
+          case "server":
+            log("Received new servers list from other server", "D");
+            let servers = pObj.servers;
+            for (let server in servers) {
+              state.servers.add(server);
+            }
+            break;
+          case "error":
+            break;
+          default:
+            log("Unknown message: "+msgJSON, "W");
+            sendAll(msgObj);
+        }
+      } catch (e) {
+        try {
+          msgObj = JSON.parse(msgJSON);
+          if (typeof msgObj.type == "undefined") {
+            let stack = e.stack.toString().split(/\r\n|\n/);
+            stack = JSON.stringify(stack, null, 4);
+            log(`Server error, stack trace: ${stack}`, "E");
+          } else {
+            log("A device is using old tally format, upgrade it to v4.0 or above", "E");
+          }
+        } catch (e2) {
+          log("Invalid JSON - "+e, "E");
+        }
+      }
+    });
+
+    socket.on('close', function() {
+      try {
+        let oldId = JSON.parse(JSON.stringify(socket.ID));
+        log("\x1b[31m"+oldId+"\x1b[0m Connection closed", "D");
+        if (socket.type == "Server") {
+          log("\x1b[31m"+socket.address+"\x1b[0m Inbound connection closed", "W");
+        }
+        let packet = makePacket({"command":"disconnect","data":{"ID":oldId}});
+        sendServers(packet);
+        sendConfigs(packet, socket);
+      } catch (e) {
+        log("Could not end connection cleanly","E");
+      }
+    });
   });
+
+  coreServer.on('error', function() {
+    log("Server failed to start or crashed, please check the port is not in use", "E");
+    process.exit(1);
+  });
+
+  if (ownHTTPserver) {
+    serverHTTPS.listen(port)
+  }
+}
+
+function startLoops() {
+
+  // 5 Second ping loop
+  setInterval(() => {
+    doPing();
+    connectToOtherServers();
+  }, 5000);
+
+  // 1 Minute ping loop
+  setInterval(() => {
+    connectToOtherServers(true);
+  }, 60000);
 
 }
 
-let otherServers = {};
-otherServers.trimmed = function() {
-  let otherServersTrimmed = {};
-  for (var server in otherServers) {
-    if (otherServers.hasOwnProperty(server) && typeof otherServers[server] !== 'function') {
-      otherServersTrimmed[server] = {};
-      otherServersTrimmed[server].active = otherServers[server].active;
-      otherServersTrimmed[server].connected = otherServers[server].connected;
-    }
-  }
-  return otherServersTrimmed;
-};
-otherServers.list = function() {
-  let otherServersList = [];
-  for (var server in otherServers) {
-    if (otherServers.hasOwnProperty(server) && typeof otherServers[server] !== 'function' && otherServers[server].connected == true) {
-      otherServersList.push(server);
-    }
-  }
-  return otherServersList;
-};
-
-loadConfig(config);
-
-let state = {};
-state = setUpStates(state);
-
-let version = "4.0";
-let type = "Server";
-let loadTime = new Date().getTime();
-
-const coreServer = new WebSocketServer({ port: port });
-
-setupOtherServers();
-
-// 5 Second ping loop
-setInterval(() => {
-  doPing();
-  setupOtherServers();
-}, 5000);
-
-// 1 Minute ping loop
-setInterval(() => {
-  setupOtherServers(true);
-}, 60000);
-
-
-// Main websocket server
-coreServer.on('connection', function connection(socket) {
-  log("New connection established, sending it other severs list", "D");
-
-  // Sending server list
-
-  let payload = {};
-  payload.command = "server";
-  payload.servers = otherServers.trimmed();
-  sendData(socket, payload);
-
-  socket.pingStatus = "alive";
-
-  //save to DB here
-
-  socket.on('message', function message(msgJSON) {
-    log('Received: '+msgJSON, "A");
-    let msgObj = {};
-    let pObj;
-    let hObj;
-    try {
-      msgObj = JSON.parse(msgJSON);
-      pObj = msgObj.payload;
-      hObj = msgObj.header;
-      if (typeof pObj.source == "undefined") {
-        pObj.source = "default";
-      }
-      switch (pObj.command) {
-        case "meta":
-          log('Received: '+msgJSON, "D");
-          socket.send("Received meta");
-          break;
-        case "register":
-          if (typeof socket.type == "undefined") {
-            socket.type = hObj.type;
-          }
-          if (typeof socket.ID == "undefined") {
-            socket.ID = hObj.fromID;
-          }
-          switch (hObj.type) {
-            case "Config":
-              log(hObj.fromID+' - Registered as new config controller', "D");
-              break;
-            case "Server":
-                let address = pObj.address;
-                socket.address = address;
-                log("\x1b[32m"+hObj.fromID+'\x1b[0m Registered as new server', "D");
-                log("\x1b[32m"+address+"\x1b[0m Registered as new inbound server connection", "S");
-                if (!otherServers.hasOwnProperty(address)) {
-                  log("Adding new address: "+address, "D");
-                  otherServers[address] = {"socket":null,"active":true,"connected":false,"attempts":0};
-                  updateClientServerList();
-                } else {
-                  log("Address already registered", "D");
-                }
-              break;
-            default:
-              log("\x1b[32m"+hObj.fromID+"\x1b[0m Registered as new client", "D");
-              if (typeof pObj.data.camera !== "undefined") {
-                socket.camera = pObj.data.camera;
-              }
-              sendConfigs(msgObj, socket);
-              sendServers(msgObj);
-              state.tally.updateClients();
-          }
-          break;
-        case "disconnect":
-          log("\x1b[31m"+pObj.data.ID+"\x1b[0m Connection closed", "D");
-          sendConfigs(msgObj, socket);
-          sendServers(msgObj);
-          break;
-        case "tally":
-          sendServers(msgObj);
-          sendClients(msgObj, socket);
-          state.tally.update(pObj.busses, pObj.source);
-          break;
-        case "config":
-          log("Config data is being sent to clients", "D");
-          if (socket.ID == hObj.fromID) {
-            sendSelf(msgObj, socket);
-          }
-          sendAll(msgObj, socket);
-          state.tally.updateClients();
-          break;
-        case "command":
-          log("A command is being sent to clients", "D");
-          sendAll(msgObj, socket);
-          break;
-        case "pong":
-          socket.pingStatus = "alive";
-          break;
-        case "ping":
-          socket.pingStatus = "alive";
-          let payload = {};
-          payload.command = "pong";
-          sendData(socket, payload);
-          break;
-        case "server":
-          log("Received new servers list from other server", "D");
-          let servers = pObj.servers;
-          for (let server in servers) {
-            if (!otherServers.hasOwnProperty(server) && server != host) {
-              otherServers[server] = {"socket":null,"active":true,"connected":false,"attempts":0};
-              updateClientServerList();
-            }
-          }
-          break;
-        case "error":
-          break;
-        default:
-          log("Unknown message: "+msgJSON, "W");
-          sendAll(msgObj);
-      }
-    } catch (e) {
-      try {
-        msgObj = JSON.parse(msgJSON);
-        if (typeof msgObj.type == "undefined") {
-          log("Server error - "+e, "E");
-        } else {
-          log("A device is using old tally format, upgrade it to v4.0 or above", "E");
-        }
-      } catch (e2) {
-        log("Invalid JSON - "+e, "E");
-      }
-    }
-  });
-
-  socket.on('close', function() {
-    try {
-      let oldId = JSON.parse(JSON.stringify(socket.ID));
-      log("\x1b[31m"+oldId+"\x1b[0m Connection closed", "D");
-      let packet = makePacket({"command":"disconnect","data":{"ID":oldId}});
-      sendServers(packet);
-      sendConfigs(packet, socket);
-    } catch (e) {
-      log("Could not end connection cleanly","E");
-    }
-  });
-});
-
-coreServer.on('error', function() {
-  log("Server failed to start or crashed, please check the port is not in use", "E");
-  process.exit(1);
-});
-
 function setUpStates(state) {
-  let fileNameTally = configLocation+"/tallyState.json";
+  let dir = `${configLocation}/states`;
+  let fileNameTally = dir+"/tallyState.json";
+  let fileNameServers = dir+"/serversState.json";
+
+  if (!fs.existsSync(dir)){
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  // Tally
 
   state.tally = {};
+  fs.readFile(fileNameTally, function(err, data) {
+    if (typeof data !== "undefined") {
+      try {
+        state.tally.data = JSON.parse(data);
+      } catch (e) {
+        log("Could not parse tally state data", "W");
+      }
+    } else {
+      state.tally.data = {"default":{"main":{}}};
+    }
+    if (err) {
+      log("Could not read tally state from file, either invalid permissions or it doesn't exist yet", "W");
+    }
+  });
+
   state.tally.update = function(busses, source = "default") {
     let savedBusses = state.tally.data[source];
 
@@ -346,16 +333,205 @@ function setUpStates(state) {
     },100);
   };
 
-  fs.readFile(fileNameTally, function(err, data) {
+  // Servers
+
+  state.servers = {};
+  state.servers.data = {};
+  fs.readFile(fileNameServers, function(err, data) {
     if (typeof data !== "undefined") {
-      state.tally.data = JSON.parse(data);
-    } else {
-      state.tally.data = {"default":{"main":{}}};
+      let serverData = state.servers.data;
+      try {
+        serverData = JSON.parse(data);
+        for (var server in serverData) {
+          if (serverData.hasOwnProperty(server)) {
+            serverData[server].socket = null;
+            serverData[server].connected = false;
+          }
+        }
+      } catch (e) {
+        log("Could not parse server state data", "W");
+      }
     }
     if (err) {
-      log("Could not read tally state from file, either invalid permissions or it doesn't exist yet", "W");
+      log("Could not read servers state from file, either invalid permissions or it doesn't exist yet", "W");
     }
   });
+
+  state.servers.add = function(url, header, name) {
+    if (!state.servers.data.hasOwnProperty(url) && url !== host) {
+      log("Adding new address: "+url, "D");
+      state.servers.data[url] = {
+        "socket":null,
+        "active":true,
+        "connected":false,
+        "attempts":0,
+        "version":null,
+        "ID":null,
+        "Name":`Webtally v4 server`
+      };
+      if (typeof header !== "undefined") {
+        state.servers.data[url].version = header.version;
+        state.servers.data[url].ID = header.fromID;
+        if (typeof name !== "undefined") {
+          state.servers.data[address].Name = name;
+        } else {
+          state.servers.data[address].Name = `Webtally v${header.version} server`;
+        }
+      }
+      connectToOtherServers();
+      if (coreServer) {
+        sendServerListToClients();
+      }
+    } else if (url !== host) {
+      log("Address already registered", "D");
+      if (typeof state.servers.data[url].active === false) {
+        state.servers.data[url].active = true;
+        connectToOtherServers();
+      }
+    }
+
+    state.servers.save();
+  };
+
+  state.servers.update = function(address, header, name) {
+    if (state.servers.data.hasOwnProperty(address) && address !== host) {
+      log("Updating server details for: "+address, "D");
+      state.servers.data[address].version = header.version;
+      state.servers.data[address].ID = header.fromID;
+      if (typeof name !== "undefined") {
+        state.servers.data[address].Name = name;
+      } else {
+        state.servers.data[address].Name = `Webtally v${header.version} server`;
+      }
+      let payload = {};
+      payload.command = "server";
+      payload.servers = state.servers.getDetails(address);
+      sendAdmins(makePacket(payload));
+      sendServerListToClients();
+    } else {
+      log("Address not registered, adding: "+address, "D");
+      state.servers.add(address, header, name);
+    }
+
+    state.servers.save();
+  }
+
+  state.servers.remove = function(url) {
+    if (!state.servers.data.hasOwnProperty(url)) {
+      log("Removing address and closing connection to: "+url, "D");
+      try {
+        state.servers.data[url].socket.close();
+      } catch (e) {
+        log("Server connection already closed","W");
+      }
+      delete state.servers.data[url];
+    }
+
+    let payload = {};
+    payload.command = "server";
+    payload.servers = state.servers.getDetails(address);
+    sendAdmins(makePacket(payload));
+    state.servers.save();
+  }
+
+  state.servers.getURLs = function(print = false) {
+    let serverDataList = [];
+    let serverData = state.servers.data;
+    for (var server in serverData) {
+      if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function' && serverData[server].connected == true) {
+        serverDataList.push(server);
+      }
+      if (print) {
+        log(`${server} - Connected: ${serverData[server].connected} Active: ${serverData[server].active}`,"S");
+      }
+    }
+    return serverDataList;
+  }
+
+  state.servers.getStatus = function(print = false) {
+    let serverDataTrimmed = {};
+    let serverData = state.servers.data;
+    for (var server in serverData) {
+      if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function') {
+        serverDataTrimmed[server] = {};
+        serverDataTrimmed[server].active = serverData[server].active;
+        serverDataTrimmed[server].connected = serverData[server].connected;
+        if (print) {
+          log(`${server} - Connected: ${serverData[server].connected} Active: ${serverData[server].active}`,"S");
+        }
+      }
+    }
+    return serverDataTrimmed;
+  }
+
+  state.servers.getDetails = function(server = "ALL", print = false) {
+    let details = {};
+    if (server == "ALL") {
+      for (var data in state.servers.data) {
+        if (state.servers.data.hasOwnProperty(data)) {
+          details[data] = {};
+          details[data].socket = "SOCKET OBJECT";
+          details[data].active = state.servers.data[data].active;
+          details[data].connected = state.servers.data[data].connected;
+          details[data].attempts = state.servers.data[data].attempts;
+          details[data].version = state.servers.data[data].version;
+          details[data].ID = state.servers.data[data].ID;
+          details[data].Name = state.servers.data[data].Name;
+        }
+      }
+
+      for (var detail in details) {
+        if (details.hasOwnProperty(detail)) {
+          if (details[detail].connected) {
+            details[detail].socket = "SOCKET OBJECT";
+          } else {
+            details[detail].socket = null;
+          }
+        }
+      }
+    } else {
+      if (typeof state.servers.data[server] !== "undefined") {
+        details[server] = {};
+        details[server].socket = "SOCKET OBJECT";
+        details[server].active = state.servers.data[server].active;
+        details[server].connected = state.servers.data[server].connected;
+        details[server].attempts = state.servers.data[server].attempts;
+        details[server].version = state.servers.data[server].version;
+        details[server].ID = state.servers.data[server].ID;
+        details[server].Name = state.servers.data[server].Name;
+      }
+    }
+    if (print) {
+      log("Server details: "+JSON.stringify(details, null, 4), "A");
+    }
+    return details;
+  }
+
+  state.servers.getThisServer = function() {
+    let thisServer = {
+      "socket": "SOCKET OBJECT",
+      "active":true,
+      "connected":true,
+      "attempts":0,
+      "version":version,
+      "ID":myID,
+      "Name":serverName
+    }
+    return thisServer;
+  };
+
+  state.servers.save = function() {
+    if (dataBase === false) {
+      let data = JSON.stringify(state.servers.getDetails("ALL"));
+      fs.writeFile(fileNameServers, data, err => {
+        if (err) {
+          log("Could not save servers state to file, permissions?", "W");
+        }
+      });
+    } else {
+      log("Not implemented yet - database connection", "W");
+    }
+  }
 
   return state;
 }
@@ -384,10 +560,11 @@ function doPing() {
   log("Clients dead: "+counts.dead, "A");
 }
 
-function setupOtherServers(retry = false) {
-  for (let server in otherServers) {
-    if (otherServers.hasOwnProperty(server) && typeof otherServers[server] !== 'function') {
-      let thisServer = otherServers[server];
+function connectToOtherServers(retry = false) {
+  let serverData = state.servers.data;
+  for (let server in serverData) {
+    if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function') {
+      let thisServer = serverData[server];
       if ((!thisServer.connected && thisServer.active && thisServer.attempts < 3) || (retry && !thisServer.connected)) {
         let outbound;
         let inError = false;
@@ -402,10 +579,15 @@ function setupOtherServers(retry = false) {
           let payload = {};
           payload.command = "register";
           payload.address = host;
+          payload.name = serverName;
           sendData(outbound, payload);
           log("\x1b[32m"+server+"\x1b[0m Established as new outbound server connection", "S");
           thisServer.connected = true;
           thisServer.attempts = 0;
+          payload = {};
+          payload.command = "server";
+          payload.servers = state.servers.getDetails(server);
+          sendAdmins(makePacket(payload));
         });
 
         outbound.on('message', function message(msgJSON) {
@@ -427,10 +609,7 @@ function setupOtherServers(retry = false) {
                 log("Received new servers list from other server", "D");
                 let servers = pObj.servers;
                 for (let server in servers) {
-                  if (!otherServers.hasOwnProperty(server) && server != host) {
-                    otherServers[server] = {"socket":null,"active":true,"connected":false,"attempts":0};
-                    updateClientServerList();
-                  }
+                  state.servers.add(server);
                 }
                 break;
               case "tally":
@@ -450,12 +629,15 @@ function setupOtherServers(retry = false) {
           } catch (e) {
             try {
               msgObj = JSON.parse(msgJSON);
-              if (typeof msgObj.type !== "undefined") {
-                log("A device on a different server is using old tally format, upgrade it to v4.0 or above", "W");
+              if (typeof msgObj.type == "undefined") {
+                let stack = e.stack.toString().split(/\r\n|\n/);
+                stack = JSON.stringify(stack, null, 4);
+                log(`Server error, stack trace: ${stack}`, "E");
+              } else {
+                log("A device is using old tally format, upgrade it to v4.0 or above", "E");
               }
-              log("Invalid JSON from other server - "+e, "E");
             } catch (e2) {
-              log("Malformed JSON from other server - "+e, "E");
+              log("Invalid JSON from other server- "+e, "E");
             }
           }
         });
@@ -465,8 +647,12 @@ function setupOtherServers(retry = false) {
           thisServer.socket = null;
           thisServer.attempts++;
           if (!inError) {
-            log("Disconnected from server: \x1b[31m"+server+"\x1b[0m", "W");
-            updateClientServerList();
+            log("\x1b[31m"+server+"\x1b[0m Outbound connection closed", "W");
+            sendServerListToClients();
+            let payload = {};
+            payload.command = "server";
+            payload.servers = state.servers.getDetails(server);
+            sendAdmins(makePacket(payload));
           }
         });
 
@@ -481,14 +667,14 @@ function setupOtherServers(retry = false) {
   }
 }
 
-function updateClientServerList() {
+function sendServerListToClients() {
   log("Sending updated server list to clients", "D");
   let payload = {};
   payload.command = "server";
-  payload.servers = otherServers.trimmed();
+  payload.servers = state.servers.getDetails("ALL", true);
 
   coreServer.clients.forEach(function each(client) {
-    if (client.readyState === WebSocket.OPEN) {
+    if (client.readyState === WebSocket.OPEN && client.type !== "Admin") {
       sendData(client, payload);
     }
   });
@@ -504,10 +690,12 @@ function sendServers(json) { //Only servers
 
   let recipients = obj.header.recipients;
   let returnObj = updateHeader(obj);
-  for (var server in otherServers) {
-    if (otherServers.hasOwnProperty(server) && otherServers[server].connected == 1) {
+  let serverData = state.servers.data;
+  state.servers.getDetails("ALL",true)
+  for (var server in serverData) {
+    if (serverData.hasOwnProperty(server) && serverData[server].connected == true && serverData[server].socket !== null) {
       if (!recipients.includes(server)) {
-        otherServers[server].socket.send(JSON.stringify(returnObj));
+        serverData[server].socket.send(JSON.stringify(returnObj));
       }
     }
   }
@@ -548,6 +736,22 @@ function sendConfigs(json, socket = null) { //Only config controllers
   });
 }
 
+function sendAdmins(json, socket = null) { //Only Admin controllers
+  let obj = {};
+  if (typeof json == "object") {
+    obj = json;
+  } else {
+    obj = JSON.parse(json);
+  }
+
+  let returnObj = updateHeader(obj);
+  coreServer.clients.forEach(function each(client) {
+    if (client !== socket && client.readyState === WebSocket.OPEN && client.type == "Admin") {
+      client.send(JSON.stringify(returnObj));
+    }
+  });
+}
+
 function sendAll(json, socket) { //Send to all
   sendServers(json);
   sendClients(json, socket);
@@ -567,7 +771,7 @@ function sendSelf(json, socket) {
 
 function makeHeader(intType = type, intVersion = version, intLoadTime = loadTime) {
   let header = {};
-  header.fromID = "S_"+intLoadTime+"_"+version;
+  header.fromID = myID;
   header.timestamp = new Date().getTime();
   header.version = intVersion;
   header.type = intType;
@@ -602,7 +806,7 @@ function updateHeader(json, relayed = true) {
   }
   let header = msgObj.header;
   if (relayed == true) {
-    let merged = arrayUnique(header.recipients.concat(otherServers.list()));
+    let merged = arrayUnique(header.recipients.concat(state.servers.getURLs()));
     header.recipients = merged;
   }
   return msgObj;
@@ -627,7 +831,85 @@ function arrayUnique(array) {
   return a;
 }
 
-function loadConfig(configObj) {
+function startHTTPS() {
+  if (ownHTTPserver) {
+    let sslCert;
+    let sslKey;
+
+    try {
+      sslCert = fs.readFileSync(certPath, { encoding: 'utf8' });
+    } catch (e) {
+      log("Could not load server SSL certificate", "E");
+      process.exit(1);
+    }
+
+    try {
+      sslKey = fs.readFileSync(keyPath, { encoding: 'utf8' });
+    } catch (e) {
+      log("Could not load server SSL key", "E");
+      process.exit(1);
+    }
+
+    const serverHTTPS = createServer({
+      cert: sslCert,
+      key: sslKey
+    });
+    return serverHTTPS;
+  } else {
+    return null;
+  }
+}
+
+function loadConfig() {
+  try {
+    config = require(configLocation+'/config.json');
+  } catch (e) {
+    config = {};
+    log("Config could not be loaded, missing file or invalid JSON?", "E");
+    log("Creating new config file");
+
+    if (!fs.existsSync(configLocation)){
+      fs.mkdirSync(configLocation, { recursive: true });
+    }
+
+    let port = reader.question("What port shall the server use: ");
+    let host = reader.question("What url/IP is the server connected to from: ");
+    let serverName = reader.question("Please name this server: ");
+    let loggingLevel = reader.question("What logging level would you like? (A)ll (D)ebug (W)arnings (E)rror: ");
+    let debugLineNum = reader.question("Would you like to print line numbers in the logs? true/false: ");
+    let createLogFile = reader.question("Would you like to write the log to a file? true/false: ");
+    let otherHost = reader.question("If possible provide the url/ip of another server in the network: ");
+    let ownHTTPserver = reader.question("Should this sever be it's own https server? true/false: ");
+    if (ownHTTPserver == true) {
+      let certPath = reader.question("Path to SSL certificate (normally .pem) eg. /keys/cert.pem: ");
+      let keyPath = reader.question("Path to SSL key (normally .key) eg. /keys/cert.key: ");
+    }
+
+    config = {
+      "port":port,
+      "host":host,
+      "serverName":serverName,
+      "loggingLevel":loggingLevel,
+      "debugLineNum":debugLineNum,
+      "createLogFile":createLogFile,
+      "ownHTTPserver":ownHTTPserver,
+      "dataBase":false,
+      "otherServers":[]
+    };
+    if (otherHost !== "") {
+      config.otherServers[0] = otherHost;
+    }
+    if (ownHTTPserver == true) {
+      config.certPath = certPath;
+      config.keyPath = keyPath;
+    }
+    fs.writeFile(configLocation+'/config.json', JSON.stringify(config), err => {
+      if (err) {
+        log("Could not write config file, running with entered details anyway", "E");
+      }
+    });
+  }
+
   if (typeof argLoggingLevel !== "undefined") {
     loggingLevel = argLoggingLevel;
   } else if (typeof config.loggingLevel !== "undefined") {
@@ -648,6 +930,12 @@ function loadConfig(configObj) {
     port = 443;
   }
 
+  if (typeof config.serverName !== "undefined") {
+    serverName = config.serverName;
+  } else {
+    serverName = "WebTally Server v4";
+  }
+
   if (typeof config.createLogFile !== "undefined") {
     createLogFile = config.createLogFile;
   } else {
@@ -660,6 +948,24 @@ function loadConfig(configObj) {
     host = 443;
   }
 
+  if (typeof config.ownHTTPserver !== "undefined") {
+    ownHTTPserver = config.ownHTTPserver;
+  } else {
+    ownHTTPserver = false;
+  }
+
+  if (typeof config.certPath !== "undefined") {
+    certPath = config.certPath;
+  } else {
+    certPath = "keys/"+host+".pem";
+  }
+
+  if (typeof config.keyPath !== "undefined") {
+    keyPath = config.keyPath;
+  } else {
+    keyPath = "keys/"+host+".key";
+  }
+
   if (typeof config.dataBase !== "undefined") {
     dataBase = config.dataBase;
   } else {
@@ -669,28 +975,23 @@ function loadConfig(configObj) {
   if (typeof config.otherServers !== "undefined") {
     for (var i = 0; i < config.otherServers.length; i++) {
       let entry = config.otherServers[i];
-      otherServers[entry] = {
-        "socket":null,
-        "active":true,
-        "connected":false,
-        "attempts":0
-      };
+      state.servers.add(entry);
     }
   }
 
-  log("WebTally server running on port: "+port);
+  log(`WebTally server running on port: \x1b[33m${port}\x1b[37m`);
   switch (loggingLevel) {
     case "A":
-      log("Logging set to All");
+      log("Logging set to \x1b[33mAll\x1b[37m");
       break;
     case "D":
-      log("Logging set to Debug");
+      log("Logging set to \x1b[33mDebug\x1b[37m");
       break;
     case "W":
-      log("Logging set to Warning & Error");
+      log("Logging set to \x1b[33mWarning\x1b[37m & \x1b[33mError\x1b[37m");
       break;
     case "E":
-      log("Logging set to Error only");
+      log("Logging set to \x1b[33mError\x1b[37m only");
       break;
     default:
   }
@@ -703,15 +1004,14 @@ function loadConfig(configObj) {
   let yyyy = today.getFullYear();
 
   let fileName = `${configLocation}/tallyServer-[${yyyy}-${mm}-${dd}].log`;
-  log("Logging to file: "+fileName);
+  log(`Logging to file: \x1b[33m${fileName}\x1b[37m`);
 
   if (typeof config.dataBase !== "undefined" && config.dataBase !== false) {
-    log("Setting up database connection", "C");
+    log(`Setting up \x1b[33mwith\x1b[37m database connection`, "C");
     //Database connection code here
   } else {
-    log("Running without database connection", "C");
+    log(`Running \x1b[33mwithout\x1b[37m database connection`, "C");
   }
-
 }
 
 function printHeader() {
@@ -738,16 +1038,25 @@ function printHeader() {
   logFile("                                                                  ");
 }
 
+function loadArgs() {
+  if (typeof args[0] !== "undefined") {
+    if (args[0] == ".") {
+      args[0] = "";
+    }
+    configLocation = __dirname+args[0];
+  } else {
+    configLocation = __dirname;
+  }
+
+  if (typeof args[1] !== "undefined") {
+    argLoggingLevel = args[1];
+  }
+}
+
 function log(message, level) {
   let e = new Error();
   let stack = e.stack.toString().split(/\r\n|\n/);
-  let lineNum;
-  if (debugLineNum) {
-    lineNum = '('+stack[2].substr(stack[2].indexOf("server.js:")+10);
-  } else {
-    lineNum = "";
-  }
-
+  let lineNum = '('+stack[2].substr(stack[2].indexOf("server.js:")+10);
   let timeNow = new Date();
   let hours = String(timeNow.getHours()).padStart(2, "0");
   let minutes = String(timeNow.getMinutes()).padStart(2, "0");
@@ -755,6 +1064,33 @@ function log(message, level) {
   let millis = String(timeNow.getMilliseconds()).padStart(3, "0");
 
   let timeString = `${hours}:${minutes}:${seconds}.${millis}`;
+
+  if (typeof message === "undefined") {
+    log(`Log message from line \x1b[35m${lineNum}\x1b[0m is not defined`, "E");
+    return;
+  } else if (typeof message !== "string") {
+    log(`Log message from line \x1b[35m${lineNum}\x1b[0m is not a string so attemping to stringify`, "A");
+    try {
+      message = JSON.stringify(message, null, 4);
+    } catch (e) {
+      log(`Log message from line \x1b[35m${lineNum}\x1b[0m could not be converted to string`, "E");
+    }
+  }
+
+  if (!debugLineNum) {
+    lineNum = "";
+  }
+
+  message = message.replace(/true/g, "\x1b[32mtrue\x1b[37m");
+  message = message.replace(/false/g, "\x1b[31mfalse\x1b[37m");
+  message = message.replace(/null/g, "\x1b[33mnull\x1b[37m");
+  message = message.replace(/undefined/g, "\x1b[33mundefined\x1b[37m");
+
+  const regexp = / \((.*?):(.[0-9]*):(.[0-9]*)\)"/g;
+  let matches = message.matchAll(regexp);
+  for (let match of matches) {
+    message = message.replace(match[0],`" [\x1b[33m${match[1]}\x1b[0m] \x1b[35m(${match[2]}:${match[3]})\x1b[0m`);
+  }
 
   switch (level) {
     case "A":
@@ -791,13 +1127,19 @@ function log(message, level) {
 
 function logFile(msg) {
   if (createLogFile) {
+    let dir = `${configLocation}/logs`;
+
+    if (!fs.existsSync(dir)){
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
     let today = new Date();
     let dd = String(today.getDate()).padStart(2, '0');
-    let mm = String(today.getMonth() + 1).padStart(2, '0'); //January is 0!
+    let mm = String(today.getMonth() + 1).padStart(2, '0');
     let yyyy = today.getFullYear();
 
-    let fileName = `${configLocation}/tallyServer-[${yyyy}-${mm}-${dd}].log`;
-    let data = msg.replace("\x1b[32m", "").replace("\x1b[0m", "").replace("\x1b[31m","")+"\n";
+    let fileName = `${dir}/tallyServer-[${yyyy}-${mm}-${dd}].log`;
+    let data = msg.replaceAll("\x1b[32m", "").replaceAll("\x1b[0m", "").replaceAll("\x1b[31m","").replaceAll("\x1b[37m", "").replaceAll("\x1b[33m", "").replaceAll("\x1b[35m", "")+"\n";
     fs.appendFile(fileName, data, err => {
       if (err) {
         createLogFile = false;
