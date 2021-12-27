@@ -139,6 +139,7 @@ function startServer() {
             break;
           case "disconnect":
             log("\x1b[31m"+pObj.data.ID+"\x1b[0m Connection closed", "D");
+            state.clients.remove(pObj.data.ID);
             sendConfigs(msgObj, socket);
             sendServers(msgObj);
             break;
@@ -177,6 +178,12 @@ function startServer() {
                   break;
                 case "config":
                   loadConfig(false);
+                  break;
+                case "printServers":
+                  state.servers.getDetails("ALL", "S");
+                  break;
+                case "printClients":
+                  state.clients.getDetails("ALL", "S");
                   break;
                 default:
 
@@ -236,21 +243,21 @@ function startServer() {
     });
 
     socket.on('close', function() {
-      try {
+      //try {
         let oldId = JSON.parse(JSON.stringify(socket.ID));
         log("\x1b[31m"+oldId+"\x1b[0m Connection closed", "D");
         socket.connected = false;
         if (socket.type == "Server") {
           log("\x1b[31m"+socket.address+"\x1b[0m Inbound connection closed", "W");
-        } else if (socket.type != "Config" && socket.type != "Admin") {
-          state.clients.update(socket);
+        } else {
+          state.clients.remove(oldId);
         }
         let packet = makePacket({"command":"disconnect","data":{"ID":oldId}});
         sendServers(packet);
         sendConfigs(packet, socket);
-      } catch (e) {
-        log("Could not end connection cleanly","E");
-      }
+      //} catch (e) {
+        //log("Could not end connection cleanly","E");
+      //}
     });
   });
 
@@ -382,6 +389,7 @@ function setUpStates() {
         },100);
       },
       clean() {
+        log("Clearing tally states");
         state.tally.data = {};
         fs.unlink(fileNameTally, (err) => {
           if (err) {
@@ -452,8 +460,8 @@ function setUpStates() {
         state.servers.save();
       },
       remove(url) {
-        if (!state.servers.data.hasOwnProperty(url)) {
-          log("Removing address and closing connection to: "+url, "D");
+        if (state.servers.data.hasOwnProperty(url)) {
+          log("Removing address and closing outbound connection to: \x1b[33m"+url+"\x1b[0m", "D");
           try {
             state.servers.data[url].socket.close();
           } catch (e) {
@@ -462,9 +470,15 @@ function setUpStates() {
           delete state.servers.data[url];
         }
 
+        coreServer.clients.forEach(function each(client) {
+          if (client.address == url && client.readyState === WebSocket.OPEN) {
+            client.terminate();
+          }
+        });
+
         let payload = {};
         payload.command = "server";
-        payload.servers = state.servers.getDetails(address, true);
+        payload.servers = state.servers.getDetails(url, true);
         sendAdmins(makePacket(payload));
         state.servers.save();
       },
@@ -533,8 +547,10 @@ function setUpStates() {
             details[server].Name = state.servers.data[server].Name;
           }
         }
-        if (print) {
+        if (print === true) {
           logObj("Server details", details, "A");
+        } else if (print == "S") {
+          logObj("Server details", details, "S");
         }
         return details;
       },
@@ -563,6 +579,11 @@ function setUpStates() {
         }
       },
       clean() {
+        log("Clearing server states");
+        let servers = state.servers.getURLs();
+        for (var i = 0; i < servers.length; i++) {
+          state.servers.remove(servers[i]);
+        }
         state.servers.data = {};
         fs.unlink(fileNameServers, (err) => {
           if (err) {
@@ -651,12 +672,16 @@ function setUpStates() {
           if (typeof clientsData[socket] !== "undefined" && clientsData[socket].local == true) {
             clientsData[socket].socket.terminate();
             delete clientsData[socket];
+          } else {
+            delete clientsData[socket];
           }
         } else {
           if (socket.type != "Server" && socket.type != "Config" && socket.type != "Admin") {
             if (typeof clientsData[socket.ID] !== "undefined" && clientsData[socket.ID].local == true) {
               delete clientsData[socket.ID];
               socket.terminate();
+            } else {
+              delete clientsData[socket.ID];
             }
           }
         }
@@ -680,8 +705,10 @@ function setUpStates() {
               }
             }
           }
-          if (print) {
-            log("Clients details: "+JSON.stringify(details, null, 4), "A");
+          if (print === true) {
+            log("Clients details", details, "A");
+          } else if (print == "S") {
+            logObj("Clients details", details, "S");
           }
         } else if (typeof clientsData[socket.ID] !== "undefined") {
           details[socket.ID].camera = clientsData[socket.ID].camera;
@@ -713,6 +740,7 @@ function setUpStates() {
         }
       },
       clean() {
+        log("Clearing clients states");
         state.clients.data = {};
         fs.unlink(fileNameClients, (err) => {
           if (err) {
@@ -867,6 +895,7 @@ function connectToOtherServers(retry = false) {
           sendData(outbound, payload);
           log("\x1b[32m"+server+"\x1b[0m Established as new outbound server connection", "S");
           thisServer.connected = true;
+          thisServer.active = true;
           thisServer.attempts = 0;
           payload = {};
           payload.command = "server";
@@ -958,6 +987,7 @@ function connectToOtherServers(retry = false) {
         });
       } else if (!thisServer.connected && thisServer.active) {
         thisServer.active = false;
+        log("Server not responding, changing status to dead: \x1b[31m"+server+"\x1b[0m", "E");
       }
     }
   }
