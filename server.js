@@ -243,7 +243,7 @@ function startServer() {
     });
 
     socket.on('close', function() {
-      //try {
+      try {
         let oldId = JSON.parse(JSON.stringify(socket.ID));
         log("\x1b[31m"+oldId+"\x1b[0m Connection closed", "D");
         socket.connected = false;
@@ -255,9 +255,9 @@ function startServer() {
         let packet = makePacket({"command":"disconnect","data":{"ID":oldId}});
         sendServers(packet);
         sendConfigs(packet, socket);
-      //} catch (e) {
-        //log("Could not end connection cleanly","E");
-      //}
+      } catch (e) {
+        log("Could not end connection cleanly","E");
+      }
     });
   });
 
