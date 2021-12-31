@@ -58,7 +58,7 @@ function startServer() {
     log("Running as \x1b[33mstandalone\x1b[37m websocket server");
     coreServer = new WebSocketServer({ port: port });
   }
-  log("Started HTTPS server");
+  log("Started Websocket server");
 
   // Main websocket server functionality
   coreServer.on('connection', function connection(socket) {
