@@ -58,6 +58,7 @@ function startServer() {
     log("Running as \x1b[33mstandalone\x1b[37m websocket server");
     coreServer = new WebSocketServer({ port: port });
   }
+  log("Started HTTPS server");
 
   // Main websocket server functionality
   coreServer.on('connection', function connection(socket) {
@@ -1158,7 +1159,7 @@ function arrayUnique(array) {
 }
 
 function startHTTPS() {
-  log(ownHTTPserver);
+  log("Starting HTTPS server");
   if (ownHTTPserver) {
     let sslCert;
     let sslKey;
