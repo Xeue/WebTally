@@ -1333,9 +1333,11 @@ function createConfig(error = true) {
   let createLogFile = reader.question("Would you like to write the log to a file? true/false: ");
   let otherHost = reader.question("If possible provide the url/ip of another server in the network: ");
   let ownHTTPserver = reader.question("Should this sever be it's own https server? true/false: ");
-  if (ownHTTPserver == true) {
-    let certPath = reader.question("Path to SSL certificate (normally .pem) eg. /keys/cert.pem: ");
-    let keyPath = reader.question("Path to SSL key (normally .key) eg. /keys/cert.key: ");
+  let certPath;
+  let keyPath;
+  if (ownHTTPserver == true || ownHTTPserver == "true") {
+    certPath = reader.question("Path to SSL certificate (normally .pem) eg. /keys/cert.pem: ");
+    keyPath = reader.question("Path to SSL key (normally .key) eg. /keys/cert.key: ");
   }
 
   port = parseInt(port);
@@ -1357,15 +1359,16 @@ function createConfig(error = true) {
   if (otherHost !== "") {
     config.otherServers[0] = otherHost;
   }
-  if (ownHTTPserver == true) {
+  if (ownHTTPserver == true || ownHTTPserver == "true") {
     config.certPath = certPath;
     config.keyPath = keyPath;
   }
-  fs.writeFile(configLocation+'/config.conf', JSON.stringify(config), err => {
-    if (err) {
-      log("Could not write config file, running with entered details anyway", "E");
-    }
-  });
+  try {
+    fs.writeFileSync(configLocation+'/config.conf', JSON.stringify(config, null, 4));
+    log("Config saved to file");
+  } catch (error) {
+    log("Could not write config file, running with entered details anyway", "E");
+  }
 }
 
 function printHeader() {
