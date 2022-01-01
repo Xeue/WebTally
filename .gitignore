@@ -15,6 +15,7 @@ nohup.out
 *.conf
 *.properties
 sftp.json
+packetStructure.json
 
 # Compiled Java class files
 *.class
