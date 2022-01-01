@@ -8,11 +8,13 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import express from 'express';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const require = createRequire(import.meta.url);
 const reader = require("readline-sync");
+const app = express();
 
 const args = process.argv.slice(2);
 const version = "4.1";
@@ -53,7 +55,33 @@ function startServer() {
   if (ownHTTPserver) {
     serverHTTPS = startHTTPS();
     log("Running as own HTTPS server and hosting UI internally");
-    coreServer = new WebSocketServer({ server: serverHTTPS });
+    app.set('views', __dirname + '/views');
+    app.set('view engine', 'ejs');
+    app.use(express.static('public'));
+
+    app.get('/', function(request, response) {
+      log("Serving tally page", "A");
+      response.header('Content-type', 'text/html');
+      let camera;
+      if (request.query.camera) {
+        camera = request.query.camera;
+      } else {
+        camera = 1;
+      }
+      response.render('tally', {
+        host: host,
+        camera: camera
+      });
+    });
+
+    coreServer = new WebSocketServer({ noServer: true });
+
+    serverHTTPS.on('upgrade', (request, socket, head) => {
+      log("Upgrade request received", "D");
+      coreServer.handleUpgrade(request, socket, head, socket => {
+        coreServer.emit('connection', socket, request);
+      })
+    })
   } else {
     log("Running as \x1b[33mstandalone\x1b[37m websocket server");
     coreServer = new WebSocketServer({ port: port });
@@ -1178,14 +1206,33 @@ function startHTTPS() {
       process.exit(1);
     }
 
-    const serverHTTPS = createServer({
+    let options = {
       cert: sslCert,
       key: sslKey
-    });
+    }
+
+    const serverHTTPS = createServer(options, app);
     return serverHTTPS;
   } else {
     return null;
   }
+}
+
+function serveHTTPS(request, response) {
+  response.writeHead(200, {
+    'Content-Type': 'text/html',
+    'charset': 'UTF-8'
+  });
+
+  fs.readFile('./src/tally.html', null, function (error, data) {
+    if (error) {
+      response.writeHead(404);
+      respone.write('file not found');
+    } else {
+      response.write(data);
+    }
+    response.end();
+  });
 }
 
 function loadConfig(fromFile = true) {
@@ -1384,16 +1431,16 @@ function printHeader() {
   console.log("                                          |___/                   ");
   console.log("                                                                  ");
 
-  logFile("                                                                  ");
-  logFile(" __          __    _   _______      _  _                   _  _   ");
-  logFile(" \\ \\        / /   | | |__   __|    | || |                 | || |  ");
-  logFile("  \\ \\  /\\  / /___ | |__  | |  __ _ | || | _   _    __   __| || |_ ");
-  logFile("   \\ \\/  \\/ // _ \\| '_ \\ | | / _` || || || | | |   \\ \\ / /|__   _|");
-  logFile("    \\  /\\  /|  __/| |_) || || (_| || || || |_| |    \\ V /    | |  ");
-  logFile("     \\/  \\/  \\___||_.__/ |_| \\__,_||_||_| \\__, |     \\_/     |_|  ");
-  logFile("                                           __/ |                  ");
-  logFile("                                          |___/                   ");
-  logFile("                                                                  ");
+  logFile("                                                                  ", true);
+  logFile(" __          __    _   _______      _  _                   _  _   ", true);
+  logFile(" \\ \\        / /   | | |__   __|    | || |                 | || |  ", true);
+  logFile("  \\ \\  /\\  / /___ | |__  | |  __ _ | || | _   _    __   __| || |_ ", true);
+  logFile("   \\ \\/  \\/ // _ \\| '_ \\ | | / _` || || || | | |   \\ \\ / /|__   _|", true);
+  logFile("    \\  /\\  /|  __/| |_) || || (_| || || || |_| |    \\ V /    | |  ", true);
+  logFile("     \\/  \\/  \\___||_.__/ |_| \\__,_||_||_| \\__, |     \\_/     |_|  ", true);
+  logFile("                                           __/ |                  ", true);
+  logFile("                                          |___/                   ", true);
+  logFile("                                                                  ", true);
 }
 
 function loadArgs() {
@@ -1495,7 +1542,7 @@ function logObj(message, obj, level) {
   log(combined, level, lineNum);
 }
 
-function logFile(msg) {
+function logFile(msg, sync = false) {
   if (createLogFile) {
     let dir = `${configLocation}/logs`;
 
@@ -1510,11 +1557,20 @@ function logFile(msg) {
 
     let fileName = `${dir}/tallyServer-[${yyyy}-${mm}-${dd}].log`;
     let data = msg.replaceAll("\x1b[32m", "").replaceAll("\x1b[0m", "").replaceAll("\x1b[31m","").replaceAll("\x1b[37m", "").replaceAll("\x1b[33m", "").replaceAll("\x1b[35m", "")+"\n";
-    fs.appendFile(fileName, data, err => {
-      if (err) {
+    if (sync) {
+      try {
+        fs.appendFileSync(fileName, data);
+      } catch (error) {
         createLogFile = false;
         log("Could not write to log file, permissions?", "E");
       }
-    });
+    } else {
+      fs.appendFile(fileName, data, err => {
+        if (err) {
+          createLogFile = false;
+          log("Could not write to log file, permissions?", "E");
+        }
+      });
+    }
   }
 }
