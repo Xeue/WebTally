@@ -5,7 +5,6 @@ import { WebSocket } from 'ws';
 import { createServer } from 'https';
 import { createRequire } from "module";
 import * as fs from 'fs';
-import * as readline from 'readline';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import express from 'express';
@@ -14,7 +13,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const require = createRequire(import.meta.url);
 const reader = require("readline-sync");
-const app = express();
 
 const args = process.argv.slice(2);
 const version = "4.1";
@@ -26,10 +24,10 @@ let configLocation = __dirname;
 let port = 443;
 let host;
 let loggingLevel = "W";
-let debugLineNum = false;
+let debugLineNum = true;
 let createLogFile = true;
 let argLoggingLevel;
-let ownHTTPserver = false;
+let ownHTTPserver = true;
 let dataBase;
 let certPath;
 let keyPath;
@@ -55,24 +53,6 @@ function startServer() {
   if (ownHTTPserver) {
     serverHTTPS = startHTTPS();
     log("Running as own HTTPS server and hosting UI internally");
-    app.set('views', __dirname + '/views');
-    app.set('view engine', 'ejs');
-    app.use(express.static('public'));
-
-    app.get('/', function(request, response) {
-      log("Serving tally page", "A");
-      response.header('Content-type', 'text/html');
-      let camera;
-      if (request.query.camera) {
-        camera = request.query.camera;
-      } else {
-        camera = 1;
-      }
-      response.render('tally', {
-        host: host,
-        camera: camera
-      });
-    });
 
     coreServer = new WebSocketServer({ noServer: true });
 
@@ -1211,28 +1191,31 @@ function startHTTPS() {
       key: sslKey
     }
 
+    const app = express();
     const serverHTTPS = createServer(options, app);
+    app.set('views', __dirname + '/views');
+    app.set('view engine', 'ejs');
+    app.use(express.static('public'));
+
+    app.get('/', function(request, response) {
+      log("Serving tally page", "A");
+      response.header('Content-type', 'text/html');
+      let camera;
+      if (request.query.camera) {
+        camera = request.query.camera;
+      } else {
+        camera = 1;
+      }
+      response.render('tally', {
+        host: host,
+        camera: camera
+      });
+    });
+
     return serverHTTPS;
   } else {
     return null;
   }
-}
-
-function serveHTTPS(request, response) {
-  response.writeHead(200, {
-    'Content-Type': 'text/html',
-    'charset': 'UTF-8'
-  });
-
-  fs.readFile('./src/tally.html', null, function (error, data) {
-    if (error) {
-      response.writeHead(404);
-      respone.write('file not found');
-    } else {
-      response.write(data);
-    }
-    response.end();
-  });
 }
 
 function loadConfig(fromFile = true) {
