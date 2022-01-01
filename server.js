@@ -1212,6 +1212,33 @@ function startHTTPS() {
       });
     });
 
+    app.get('/config', function(request, response) {
+      log("Serving config page", "A");
+      response.header('Content-type', 'text/html');
+      response.render('config', {host: host});
+    });
+    app.get('/control', function(request, response) {
+      log("Serving config page", "A");
+      response.header('Content-type', 'text/html');
+      response.render('control', {host: host});
+    });
+    app.get('/servers', function(request, response) {
+      log("Serving config page", "A");
+      response.header('Content-type', 'text/html');
+      response.render('servers', {host: host});
+    });
+
+    app.get('/components/config', function(request, response) {
+      log("Serving config page", "A");
+      response.header('Content-type', 'text/html');
+      response.render('components/config', {get: request.query});
+    });
+    app.get('/components/server', function(request, response) {
+      log("Serving config page", "A");
+      response.header('Content-type', 'text/html');
+      response.render('components/server', {get: request.query});
+    });
+
     return serverHTTPS;
   } else {
     return null;

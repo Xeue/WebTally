@@ -1,0 +1,28 @@
+<% if (get.online == true || get.online == "true") { %>
+  <div id="<%= get.id %>" class="s_device s_online" data-id="<%= get.camera %>">
+    <div class="s_status"></div>
+<% } else { %>
+  <div id="<%= get.id %>" class="s_device s_offline" data-id="<%= get.camera %>">
+    <div class="s_status"></div>
+<% } %>
+  <div class="s_typeImg s_type_<%= get.device %>"></div>
+  <div class="s_camera">
+    <% let camnum = get.camera < 2 ? " m_disabled" : ""; %>
+    <button class="s_camMinus<%= camnum %>"></button>
+    <div class="s_camNum">
+      <%= get.camera %>
+    </div>
+    <button class="s_camPlus"></button>
+  </div>
+  <div class="s_type">
+    <%= get.device %>: <%= get.id %>
+  </div>
+  <div class="s_version">
+    Software: <%= get.version %>
+  </div>
+  <div class="s_bttns">
+    <button class="s_config"></button>
+    <button class="s_identify">Identify</button>
+    <button class="s_power"></button>
+  </div>
+</div>

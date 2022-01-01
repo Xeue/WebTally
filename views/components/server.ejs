@@ -1,0 +1,43 @@
+<% if (get.connected == true || get.connected == "true") { %>
+  <div id="<%= get.ID %>" class="n_server n_online" data-name="<%= get.name %>">
+    <header class="n_status"></header>
+<% } else { %>
+  <div id="<%= get.ID %>" class="n_server n_offline" data-name="<%= get.name %>">
+    <header class="n_status"></header>
+<% } %>
+  <figure class="n_img"></figure>
+  <section class="tbl">
+    <div class="tblRow">
+      <div class="tblCell">
+        <button class="printClients">Print Clients</button>
+      </div>
+      <div class="tblCell t_rght">Name:</div>
+      <div class="tblCell"><%= get.name %></div>
+    </div>
+    <div class="tblRow">
+      <div class="tblCell">
+        <button class="printServers">Print Servers</button>
+      </div>
+      <div class="tblCell t_rght">Address:</div>
+      <div class="tblCell"><%= get.address %></div>
+    </div>
+    <div class="tblRow">
+      <div class="tblCell">
+        <button class="config">Start Config</button>
+      </div>
+      <div class="tblCell t_rght">ID:</div>
+      <div class="tblCell"><%= get.ID %></div>
+    </div>
+    <div class="tblRow">
+      <div class="tblCell">
+        <button class="clearState">Clear States</button>
+      </div>
+      <div class="tblCell t_rght">Version:</div>
+      <div class="tblCell"><%= get.version %></div>
+    </div>
+  </section>
+  <footer class="n_bttns">
+    <button class="n_configDev">Devices Config</button>
+    <button class="n_configInpt">Inputs Config</button>
+  <footer>
+</div>

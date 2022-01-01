@@ -1,0 +1,27 @@
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" href="https://i1.wp.com/stagtv.co.uk/wp-content/uploads/2018/08/cropped-stagtv-favicon-1.png?fit=32%2C32" sizes="32x32">
+    <link rel="icon" href="https://i1.wp.com/stagtv.co.uk/wp-content/uploads/2018/08/cropped-stagtv-favicon-1.png?fit=192%2C192" sizes="192x192">
+    <title>Chilton.tv – Tally Servers</title>
+    <link href="https://fonts.googleapis.com/css?family=Raleway" rel="stylesheet" type="text/css">
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script>
+      let servers = ['<%= host %>'];
+    </script>
+    <script type="text/javascript" src="js/servers.js"></script>
+    <link rel="stylesheet" href="css/servers.css">
+  </head>
+  <body>
+    <main id="n_servers">
+
+      <section id="n_new" style="display: none;">
+        <div class="n_newCont">
+          <div>Add other severs to network</div>
+          <input name="url" id="url" placeholder="Server IP/URL">
+        </div>
+        <button id="new">Search</button>
+      </section>
+    </main>
+  </body>
+</html

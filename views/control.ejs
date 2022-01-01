@@ -1,0 +1,51 @@
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" href="https://i1.wp.com/stagtv.co.uk/wp-content/uploads/2018/08/cropped-stagtv-favicon-1.png?fit=32%2C32" sizes="32x32">
+    <link rel="icon" href="https://i1.wp.com/stagtv.co.uk/wp-content/uploads/2018/08/cropped-stagtv-favicon-1.png?fit=192%2C192" sizes="192x192">
+    <title>Chilton.tv – Tally Control</title>
+    <link href="https://fonts.googleapis.com/css?family=Raleway" rel="stylesheet" type="text/css">
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script type="text/javascript">
+      let CamNum = 0;
+      let client = false;
+      let servers = ['<%= host %>'];
+    </script>
+    <link rel="stylesheet" href="css/tally.css">
+  </head>
+  <body>
+    <main id="c_main">
+      <div id="settings">
+      </div>
+      <div id="t_chngCont" class="hidden">
+        <button id="c_clicker">Auto Clicker</button>
+      </div>
+      <section id="c_cams">
+        <div id="1" class="c_cam">
+          <div class="c_lbl">1</div>
+          <button class="c_prog c_butt"></button>
+          <button class="c_prev c_butt"></button>
+        </div>
+        <div id="2" class="c_cam">
+          <div class="c_lbl">2</div>
+          <button class="c_prog c_butt"></button>
+          <button class="c_prev c_butt"></button>
+        </div>
+        <div id="3" class="c_cam">
+          <div class="c_lbl">3</div>
+          <button class="c_prog c_butt"></button>
+          <button class="c_prev c_butt"></button>
+        </div>
+        <div id="4" class="c_cam">
+          <div class="c_lbl">4</div>
+          <button class="c_prog c_butt"></button>
+          <button class="c_prev c_butt"></button>
+        </div>
+        <button id="c_add"></button>
+      </section>
+      <!--<button id="c_cut">Cut</button>
+      <button id="c_auto" class="c_butt">Auto</button>-->
+    </main>
+    <script type="text/javascript" src="js/tally.js"></script>
+  </body>
+</html>

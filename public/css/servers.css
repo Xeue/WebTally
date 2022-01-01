@@ -1,0 +1,223 @@
+body {
+  background-color: black;
+  font-family: raleway;
+  font-variant-numeric: lining-nums;
+}
+
+.disconnected::after {
+  content: "Disconnected";
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  display: inline;
+  font-size: 600%;
+  z-index: 3;
+  background-color: rgba(0, 0, 0, 0.46);
+  color: rgb(255, 255, 255);
+  font-weight: bold;
+  line-height: 80vh;
+  top: 0;
+  left: 0;
+}
+
+#n_servers {
+  padding: 100px;
+  padding-bottom: 50px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: left;
+}
+
+.n_server {
+  color: white;
+  display: flex;
+  flex-direction: column;
+  margin-right: 40px;
+  margin-bottom: 20px;
+  width: 300px;
+  border-radius: 20px;
+  justify-content: space-between;
+  overflow: hidden;
+  transition: 0.3s;
+}
+.n_server {
+  background-color: rgba(255, 255, 255, 0.33);
+}
+
+.n_status {
+  padding: 7px 15px;
+  font-size: 156%;
+  text-align: center;
+  flex: 0;
+}
+
+.n_server.n_online .n_status::before {
+  content: "Online";
+}
+
+.n_server .n_status::before {
+  content: "Offline";
+}
+
+.n_server.n_online .n_status {
+  background-color: rgb(0, 150, 59);
+}
+.n_server .n_status {
+  background-color: rgb(163, 0, 0);
+}
+
+.n_img {
+  background-image: url(../img/server.svg);
+  background-position: center;
+  background-repeat: no-repeat;
+  height: 150px;
+  margin: 20px;
+}
+
+.tbl {
+  display: table;
+  width: 100%;
+}
+.tblRow {
+  display: table-row;
+}
+.tblCell {
+  display: table-cell;
+  padding: 0px 5px 8px 8px;
+}
+.tblCell button {
+  width: 100%;
+  padding: 5px;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  color: white;
+  font-size: 100%;
+  transition: 0.3s;
+}
+
+.n_offline .stop,
+.n_offline .restart,
+.n_online .start {
+  cursor: not-allowed;
+  background-color: rgb(126, 126, 126);
+}
+.n_offline .stop:hover,
+.n_offline .restart:hover,
+.n_online .start:hover {
+  cursor: not-allowed;
+  background-color: rgb(126, 126, 126);
+  color: white;
+}
+
+.rotate {
+  transform: rotateZ(72deg);
+}
+
+.start,
+.printServers,
+.printClients {
+  background-color: rgb(65, 127, 63);
+}
+.stop,
+.delete,
+.clearState {
+  background-color: rgb(127, 63, 63);
+}
+.restart,
+.config {
+  background-color: rgb(63, 106, 127);
+}
+.start:hover {
+  background-color: rgb(0, 226, 25);
+  color: rgb(16, 16, 16);
+}
+.stop:hover,
+.delete:hover {
+  background-color: rgb(213, 3, 3);
+}
+.restart:hover {
+  background-color: rgb(0, 171, 255);
+}
+
+.n_bttns {
+  display: flex;
+}
+.n_bttns > button {
+  flex: 1;
+  border: 0;
+  height: 42px;
+  font-size: 110%;
+  cursor: pointer;
+  color: white;
+  transition: 0.3s;
+  padding: 0;
+  margin: 0;
+}
+
+.n_configDev {
+  background-color: rgb(63, 106, 127);
+}
+.n_configInpt {
+  background-color: rgb(122, 63, 127);
+}
+.n_configDev:hover {
+  background-color: rgb(0, 171, 255);
+}
+.n_configInpt:hover {
+  background-color: rgb(206, 0, 223);
+}
+
+#n_new {
+  background-color: rgba(255, 255, 255, 0.33);
+  display: flex;
+  border-radius: 20px;
+  overflow: hidden;
+  transition: 0.3s;
+  margin-left: 20px;
+}
+#new {
+  border: 0;
+  width: 150px;
+  background-color: rgb(65, 127, 63);
+  cursor: pointer;
+  transition: 0.3s;
+  color: white;
+  font-size: 150%;
+}
+#new:hover {
+  background-color: rgb(0, 226, 25);
+  color: rgb(16, 16, 16);
+}
+.n_newCont {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+.n_newCont * {
+  margin: 5px;
+}
+.n_newCont div {
+  color: white;
+}
+#port:focus, #name:focus {
+  box-shadow: inset 0px 0px 3px rgb(27, 0, 218);
+  border: 1px solid rgb(114, 110, 222);
+}
+#port, #name {
+  padding: 5px;
+  margin: 7px;
+  border-radius: 8px;
+  border: 1px solid rgb(126, 126, 126);
+  background-color: rgb(220, 220, 220);
+  font-size: 110%;
+  width: 150px;
+  box-shadow: inset 0px 0px 3px rgb(65, 65, 65);
+  transition: 0.5s;
+}
+
+.t_rght {
+  text-align: right;
+}
