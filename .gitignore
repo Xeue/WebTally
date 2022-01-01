@@ -9,6 +9,7 @@ dist/
 1/
 2/
 3/
+states/
 config.conf
 nohup.out
 *.conf
