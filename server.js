@@ -1208,24 +1208,34 @@ function startHTTPS() {
       }
       response.render('tally', {
         host: host,
-        camera: camera
+        camera: camera,
+        serverName: serverName
       });
     });
 
     app.get('/config', function(request, response) {
       log("Serving config page", "A");
       response.header('Content-type', 'text/html');
-      response.render('config', {host: host});
+      response.render('config', {
+        host: host,
+        serverName: serverName
+      });
     });
     app.get('/control', function(request, response) {
       log("Serving config page", "A");
       response.header('Content-type', 'text/html');
-      response.render('control', {host: host});
+      response.render('control', {
+        host: host,
+        serverName: serverName
+      });
     });
     app.get('/servers', function(request, response) {
       log("Serving config page", "A");
       response.header('Content-type', 'text/html');
-      response.render('servers', {host: host});
+      response.render('servers', {
+        host: host,
+        serverName: serverName
+      });
     });
 
     app.get('/components/config', function(request, response) {

@@ -59,6 +59,18 @@ function socketConnect() {
         } else if (payload.busses.main[CamNum].prog == false) {
           indicatior.removeClass("red");
         }
+
+        if (indicatior.hasClass("red")) {
+          $("#favicon_32").prop("href", "img/icon/Red32.png");
+          $("#favicon_192").prop("href", "img/icon/Red192.png");
+        } else if (indicatior.hasClass("green")) {
+          $("#favicon_32").prop("href", "img/icon/Green32.png");
+          $("#favicon_192").prop("href", "img/icon/Green192.png");
+        } else {
+          $("#favicon_32").prop("href", "img/icon/Yellow32.png");
+          $("#favicon_192").prop("href", "img/icon/Yellow192.png");
+        }
+        
       } else if (payload.command == "server") {
         console.log("adding new servers");
         for (var server in payload.servers) {
