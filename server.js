@@ -102,50 +102,7 @@ function startServer() {
             socket.send("Received meta");
             break;
           case "register":
-            if (typeof socket.type == "undefined") {
-              socket.type = hObj.type;
-            }
-            if (typeof socket.ID == "undefined") {
-              socket.ID = hObj.fromID;
-            }
-            if (typeof socket.version == "undefined") {
-              socket.version = hObj.version;
-            }
-            switch (hObj.type) {
-              case "Config":
-                log('\x1b[32m'+hObj.fromID+'\x1b[0m Registered as new config controller', "D");
-                sendData(socket, {"command":"clients","clients":state.clients.getDetails()});
-                break;
-              case "Server":
-                let address = pObj.address;
-                let name = pObj.name;
-                socket.address = address;
-                socket.name = name;
-                log("\x1b[32m"+hObj.fromID+'\x1b[0m Registered as new server', "D");
-                log("\x1b[32m"+address+"\x1b[0m Registered as new inbound server connection", "S");
-                state.servers.add(address);
-                state.servers.update(address, hObj, name);
-                break;
-              case "Admin":
-                log('\x1b[32m'+hObj.fromID+'\x1b[0m Registered as new admin controller', "D");
-                let payload = {};
-                payload.command = "server";
-                payload.servers = state.servers.getDetails("ALL");
-                payload.servers[host] = state.servers.getThisServer();
-                sendAdmins(makePacket(payload));
-                break;
-              default:
-                log("\x1b[32m"+hObj.fromID+"\x1b[0m Registered as new client", "D");
-                socket.connected = true;
-                if (typeof pObj.data.camera !== "undefined") {
-                  socket.camera = pObj.data.camera;
-                }
-                state.clients.add(msgObj, socket);
-                sendConfigs(msgObj, socket);
-                sendServers(msgObj);
-                state.tally.updateClients();
-            }
-            break;
+            coreDoRegister(socket, hObj, pObj);
           case "disconnect":
             log("\x1b[31m"+pObj.data.ID+"\x1b[0m Connection closed", "D");
             state.clients.remove(pObj.data.ID);
@@ -167,39 +124,7 @@ function startServer() {
             state.tally.updateClients();
             break;
           case "command":
-            log("A command is being sent to clients", "D");
-            if (pObj.serial == myID) {
-              log("Command for this server recieved", "D");
-              switch (pObj.action) {
-                case "clearStates":
-                  state.tally.clean();
-                  state.clients.clean();
-                  state.servers.clean();
-                  break;
-                case "clearTally":
-                  state.tally.clean();
-                  break;
-                case "clearClients":
-                  state.clients.clean();
-                  break;
-                case "clearServers":
-                  state.servers.clean();
-                  break;
-                case "config":
-                  loadConfig(false);
-                  break;
-                case "printServers":
-                  state.servers.getDetails("ALL", "S");
-                  break;
-                case "printClients":
-                  state.clients.getDetails("ALL", "S");
-                  break;
-                default:
-
-              }
-            }
-            sendAll(msgObj, socket);
-            break;
+            coreDoCommand(socket, hObj, pObj);
           case "pong":
             socket.pingStatus = "alive";
             break;
@@ -879,6 +804,89 @@ function doPing() {
     log("Clients alive: "+counts.alive, "A");
     log("Clients dead: "+counts.dead, "A");
   }
+}
+
+function coreDoRegister(socket, hObj, pObj) {
+  if (typeof socket.type == "undefined") {
+    socket.type = hObj.type;
+  }
+  if (typeof socket.ID == "undefined") {
+    socket.ID = hObj.fromID;
+  }
+  if (typeof socket.version == "undefined") {
+    socket.version = hObj.version;
+  }
+  switch (hObj.type) {
+    case "Config":
+      log('\x1b[32m'+hObj.fromID+'\x1b[0m Registered as new config controller', "D");
+      sendData(socket, {"command":"clients","clients":state.clients.getDetails()});
+      break;
+    case "Server":
+      let address = pObj.address;
+      let name = pObj.name;
+      socket.address = address;
+      socket.name = name;
+      log("\x1b[32m"+hObj.fromID+'\x1b[0m Registered as new server', "D");
+      log("\x1b[32m"+address+"\x1b[0m Registered as new inbound server connection", "S");
+      state.servers.add(address);
+      state.servers.update(address, hObj, name);
+      break;
+    case "Admin":
+      log('\x1b[32m'+hObj.fromID+'\x1b[0m Registered as new admin controller', "D");
+      let payload = {};
+      payload.command = "server";
+      payload.servers = state.servers.getDetails("ALL");
+      payload.servers[host] = state.servers.getThisServer();
+      sendAdmins(makePacket(payload));
+      break;
+    default:
+      log("\x1b[32m"+hObj.fromID+"\x1b[0m Registered as new client", "D");
+      socket.connected = true;
+      if (typeof pObj.data.camera !== "undefined") {
+        socket.camera = pObj.data.camera;
+      }
+      state.clients.add(msgObj, socket);
+      sendConfigs(msgObj, socket);
+      sendServers(msgObj);
+      state.tally.updateClients();
+  }
+  break;
+}
+
+function coreDoCommand(socket, hObj, pObj) {
+  log("A command is being sent to clients", "D");
+  if (pObj.serial == myID) {
+    log("Command for this server recieved", "D");
+    switch (pObj.action) {
+      case "clearStates":
+        state.tally.clean();
+        state.clients.clean();
+        state.servers.clean();
+        break;
+      case "clearTally":
+        state.tally.clean();
+        break;
+      case "clearClients":
+        state.clients.clean();
+        break;
+      case "clearServers":
+        state.servers.clean();
+        break;
+      case "config":
+        loadConfig(false);
+        break;
+      case "printServers":
+        state.servers.getDetails("ALL", "S");
+        break;
+      case "printClients":
+        state.clients.getDetails("ALL", "S");
+        break;
+      default:
+
+    }
+  }
+  sendAll(msgObj, socket);
+  break;
 }
 
 function connectToOtherServers(retry = false) {
