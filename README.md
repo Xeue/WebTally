@@ -12,8 +12,9 @@ As of v4 there are a whole host of new features.
 2. Local config file
 3. Saves data to local files
 4. Pretty terminal output and creates a log file
-5. Server seperated from UI (is this a feature?)
-6. Allows remote config and control of clients
+5. Server seperated from UI
+6. Option for self hosted UI
+7. Allows remote config and control of clients
 
 ---
 
@@ -22,10 +23,9 @@ As of v4 there are a whole host of new features.
 Features yet to be implemented
 
 1. Local database state saving
-2. Re-merge the ui into server...
-3. Server management UI
-4. Finish implementing busses and sources and their UI
-5. Client closest connection finding
+2. Server management UI
+3. Finish implementing busses and sources and their UI
+4. Client closest connection finding
 
 ---
 
