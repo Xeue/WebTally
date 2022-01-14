@@ -102,7 +102,8 @@ function startServer() {
             socket.send("Received meta");
             break;
           case "register":
-            coreDoRegister(socket, hObj, pObj);
+            coreDoRegister(socket, msgObj);
+            break;
           case "disconnect":
             log("\x1b[31m"+pObj.data.ID+"\x1b[0m Connection closed", "D");
             state.clients.remove(pObj.data.ID);
@@ -124,7 +125,8 @@ function startServer() {
             state.tally.updateClients();
             break;
           case "command":
-            coreDoCommand(socket, hObj, pObj);
+            coreDoCommand(socket, msgObj);
+            break;
           case "pong":
             socket.pingStatus = "alive";
             break;
@@ -806,7 +808,9 @@ function doPing() {
   }
 }
 
-function coreDoRegister(socket, hObj, pObj) {
+function coreDoRegister(socket, msgObj) {
+  let hObj = msgObj.header;
+  let pObj = msgObj.payload;
   if (typeof socket.type == "undefined") {
     socket.type = hObj.type;
   }
@@ -850,10 +854,10 @@ function coreDoRegister(socket, hObj, pObj) {
       sendServers(msgObj);
       state.tally.updateClients();
   }
-  break;
 }
 
-function coreDoCommand(socket, hObj, pObj) {
+function coreDoCommand(socket, msgObj) {
+  let pObj = msgObj.payload;
   log("A command is being sent to clients", "D");
   if (pObj.serial == myID) {
     log("Command for this server recieved", "D");
@@ -886,7 +890,6 @@ function coreDoCommand(socket, hObj, pObj) {
     }
   }
   sendAll(msgObj, socket);
-  break;
 }
 
 function connectToOtherServers(retry = false) {
