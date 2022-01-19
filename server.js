@@ -1232,10 +1232,10 @@ function startHTTPS() {
         serverName: serverName
       });
     });
-    app.get('/control', function(request, response) {
+    app.get('/mixer', function(request, response) {
       log("Serving config page", "A");
       response.header('Content-type', 'text/html');
-      response.render('control', {
+      response.render('mixer', {
         host: host,
         serverName: serverName
       });

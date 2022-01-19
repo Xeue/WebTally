@@ -15,15 +15,18 @@
     <link rel="stylesheet" href="css/servers.css">
   </head>
   <body>
-    <main id="n_servers">
+    <header id="n_new">
+      <div class="n_newCont">
+        <div>Search for severs to add to the network</div>
+        <input name="url" id="url" placeholder="Server IP/URL">
+      </div>
+      <button id="new" class="headerButton">Search</button>
 
-      <section id="n_new" style="display: none;">
-        <div class="n_newCont">
-          <div>Add other severs to network</div>
-          <input name="url" id="url" placeholder="Server IP/URL">
-        </div>
-        <button id="new">Search</button>
-      </section>
+      <button class="n_configDev headerButton blue">Show Devices</button>
+      <button class="n_configInpt headerButton purple">Virtual Mixer</button>
+    </header>
+
+    <main id="n_servers">
     </main>
   </body>
 </html

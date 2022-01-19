@@ -8,36 +8,31 @@
   <figure class="n_img"></figure>
   <section class="tbl">
     <div class="tblRow">
-      <div class="tblCell">
-        <button class="printClients">Print Clients</button>
-      </div>
       <div class="tblCell t_rght">Name:</div>
       <div class="tblCell"><%= get.name %></div>
     </div>
     <div class="tblRow">
-      <div class="tblCell">
-        <button class="printServers">Print Servers</button>
-      </div>
+
       <div class="tblCell t_rght">Address:</div>
       <div class="tblCell"><%= get.address %></div>
     </div>
     <div class="tblRow">
-      <div class="tblCell">
-        <button class="config">Start Config</button>
-      </div>
       <div class="tblCell t_rght">ID:</div>
       <div class="tblCell"><%= get.ID %></div>
     </div>
     <div class="tblRow">
-      <div class="tblCell">
-        <button class="clearState">Clear States</button>
-      </div>
       <div class="tblCell t_rght">Version:</div>
       <div class="tblCell"><%= get.version %></div>
     </div>
   </section>
-  <footer class="n_bttns">
-    <button class="n_configDev">Devices Config</button>
-    <button class="n_configInpt">Inputs Config</button>
+  <footer class="n_bttns flxCol">
+    <div class="flxRow">
+      <button class="printClients green">Print Clients</button>
+      <button class="printServers green">Print Servers</button>
+    </div>
+    <div class="flxRow">
+      <button class="config blue">Start Config</button>
+      <button class="clearState red">Clear States</button>
+    </div>
   <footer>
 </div>

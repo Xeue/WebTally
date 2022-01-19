@@ -118,11 +118,11 @@ $(document).ready(function() {
 
     if ($trg.hasClass("n_configDev")) {
       port = $trg.closest(".n_server").data("port");
-      URL = "config?port="+port;
+      URL = "config";
       window.open(URL, '_blank');
     } else if ($trg.hasClass("n_configInpt")) {
       port = $trg.closest(".n_server").data("port");
-      URL = "control?port="+port;
+      URL = "mixer";
       window.open(URL, '_blank');
     } else if ($trg.hasClass("start") && $srv.hasClass("n_offline")) {
       REST("start",args);
@@ -163,9 +163,7 @@ $(document).ready(function() {
     } else if ($trg.hasClass("delete")) {
       REST("delete",args);
     } else if ($trg.is("#new")) {
-      args.name = $("#name").val();
-      args.port = $("#port").val();
-      REST("new",args);
+      alert("Not added yet");
     }
   });
 });

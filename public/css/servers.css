@@ -2,6 +2,7 @@ body {
   background-color: black;
   font-family: raleway;
   font-variant-numeric: lining-nums;
+  margin: 0px;
 }
 
 .disconnected::after {
@@ -98,15 +99,21 @@ body {
   transition: 0.3s;
 }
 
-.n_offline .stop,
-.n_offline .restart,
-.n_online .start {
+.flxRow {
+  display: flex;
+  flex-direction: row;
+}
+
+.flxCol {
+  display: flex;
+  flex-direction: column;
+}
+
+.n_offline button {
   cursor: not-allowed;
   background-color: rgb(126, 126, 126);
 }
-.n_offline .stop:hover,
-.n_offline .restart:hover,
-.n_online .start:hover {
+.n_offline button:hover {
   cursor: not-allowed;
   background-color: rgb(126, 126, 126);
   color: white;
@@ -116,36 +123,36 @@ body {
   transform: rotateZ(72deg);
 }
 
-.start,
-.printServers,
-.printClients {
+.green {
   background-color: rgb(65, 127, 63);
 }
-.stop,
-.delete,
-.clearState {
+.red {
   background-color: rgb(127, 63, 63);
 }
-.restart,
-.config {
+.blue {
   background-color: rgb(63, 106, 127);
 }
-.start:hover {
+.purple {
+  background-color: rgb(122, 63, 127);
+}
+.green:hover {
   background-color: rgb(0, 226, 25);
   color: rgb(16, 16, 16);
 }
-.stop:hover,
-.delete:hover {
+.red:hover {
   background-color: rgb(213, 3, 3);
 }
-.restart:hover {
+.blue:hover {
   background-color: rgb(0, 171, 255);
+}
+.purple:hover {
+  background-color: rgb(206, 0, 223);
 }
 
 .n_bttns {
   display: flex;
 }
-.n_bttns > button {
+.n_bttns button {
   flex: 1;
   border: 0;
   height: 42px;
@@ -157,26 +164,21 @@ body {
   margin: 0;
 }
 
-.n_configDev {
-  background-color: rgb(63, 106, 127);
-}
-.n_configInpt {
-  background-color: rgb(122, 63, 127);
-}
-.n_configDev:hover {
-  background-color: rgb(0, 171, 255);
-}
-.n_configInpt:hover {
-  background-color: rgb(206, 0, 223);
+.headerButton {
+  border: 0;
+  min-width: 150px;
+  cursor: pointer;
+  transition: 0.3s;
+  color: white;
+  font-size: 150%;
+  padding: 15px;
 }
 
 #n_new {
   background-color: rgba(255, 255, 255, 0.33);
   display: flex;
-  border-radius: 20px;
   overflow: hidden;
   transition: 0.3s;
-  margin-left: 20px;
 }
 #new {
   border: 0;
