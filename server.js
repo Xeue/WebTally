@@ -1245,7 +1245,8 @@ function startHTTPS() {
       response.header('Content-type', 'text/html');
       response.render('servers', {
         host: host,
-        serverName: serverName
+        serverName: serverName,
+        version: version
       });
     });
 

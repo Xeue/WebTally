@@ -179,6 +179,7 @@ body {
   display: flex;
   overflow: hidden;
   transition: 0.3s;
+  justify-content: end;
 }
 #new {
   border: 0;
@@ -222,4 +223,12 @@ body {
 
 .t_rght {
   text-align: right;
+}
+
+.versionInfo {
+  align-self: center;
+  margin-right: auto;
+  padding-left: 20px;
+  font-size: 25pt;
+  color: white;
 }
