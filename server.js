@@ -34,6 +34,17 @@ let keyPath;
 let serverName = "WebTally Server v4";
 let printPings = false;
 
+let r = "\x1b[31m";
+let g = "\x1b[32m";
+let y = "\x1b[33m";
+let b = "\x1b[34m";
+let p = "\x1b[35m";
+let c = "\x1b[36m";
+let w = "\x1b[37m";
+let reset = "\x1b[0m";
+let dim = "\x1b[2m";
+let bright = "\x1b[1m";
+
 let config;
 
 var coreServer;
@@ -63,7 +74,7 @@ function startServer() {
       })
     })
   } else {
-    log("Running as \x1b[33mstandalone\x1b[37m websocket server");
+    log(`Running as ${y}standalone${w} websocket server`);
     coreServer = new WebSocketServer({ port: port });
   }
   log("Started Websocket server");
@@ -105,7 +116,7 @@ function startServer() {
             coreDoRegister(socket, msgObj);
             break;
           case "disconnect":
-            log("\x1b[31m"+pObj.data.ID+"\x1b[0m Connection closed", "D");
+            log(`${r}${pObj.data.ID}${reset} Connection closed`, "D");
             state.clients.remove(pObj.data.ID);
             sendConfigs(msgObj, socket);
             sendServers(msgObj);
@@ -181,10 +192,10 @@ function startServer() {
     socket.on('close', function() {
       try {
         let oldId = JSON.parse(JSON.stringify(socket.ID));
-        log("\x1b[31m"+oldId+"\x1b[0m Connection closed", "D");
+        log(`${r}${oldId}${reset} Connection closed`, "D");
         socket.connected = false;
         if (socket.type == "Server") {
-          log("\x1b[31m"+socket.address+"\x1b[0m Inbound connection closed", "W");
+          log(`${r}${socket.address}${reset} Inbound connection closed`, "W");
         } else {
           state.clients.remove(oldId);
         }
@@ -397,7 +408,7 @@ function setUpStates() {
       },
       remove(url) {
         if (state.servers.data.hasOwnProperty(url)) {
-          log("Removing address and closing outbound connection to: \x1b[33m"+url+"\x1b[0m", "D");
+          log(`Removing address and closing outbound connection to: ${y}${url}${reset}`, "D");
           try {
             state.servers.data[url].socket.close();
           } catch (e) {
@@ -751,7 +762,7 @@ function setUpStates() {
       try {
         properties = JSON.parse(data);
         myID = properties.myID;
-        log(`Server ID is: \x1b[33m${myID}\x1b[37m`)
+        log(`Server ID is: ${y}${myID}${w}`)
       } catch (e) {
         log("Could not parse server properties", "W");
         properties = {
@@ -822,7 +833,7 @@ function coreDoRegister(socket, msgObj) {
   }
   switch (hObj.type) {
     case "Config":
-      log('\x1b[32m'+hObj.fromID+'\x1b[0m Registered as new config controller', "D");
+      log(`${g}${hObj.fromID}${reset} Registered as new config controller`, "D");
       sendData(socket, {"command":"clients","clients":state.clients.getDetails()});
       break;
     case "Server":
@@ -830,13 +841,13 @@ function coreDoRegister(socket, msgObj) {
       let name = pObj.name;
       socket.address = address;
       socket.name = name;
-      log("\x1b[32m"+hObj.fromID+'\x1b[0m Registered as new server', "D");
-      log("\x1b[32m"+address+"\x1b[0m Registered as new inbound server connection", "S");
+      log(`${g}${hObj.fromID}${reset} Registered as new server`, "D");
+      log(`${g}${address}${reset} Registered as new inbound server connection`, "S");
       state.servers.add(address);
       state.servers.update(address, hObj, name);
       break;
     case "Admin":
-      log('\x1b[32m'+hObj.fromID+'\x1b[0m Registered as new admin controller', "D");
+      log(`${g}${hObj.fromID}${reset} Registered as new admin controller`, "D");
       let payload = {};
       payload.command = "server";
       payload.servers = state.servers.getDetails("ALL");
@@ -844,7 +855,7 @@ function coreDoRegister(socket, msgObj) {
       sendAdmins(makePacket(payload));
       break;
     default:
-      log("\x1b[32m"+hObj.fromID+"\x1b[0m Registered as new client", "D");
+      log(`${g}${hObj.fromID}${reset} Registered as new client`, "D");
       socket.connected = true;
       if (typeof pObj.data.camera !== "undefined") {
         socket.camera = pObj.data.camera;
@@ -901,7 +912,7 @@ function connectToOtherServers(retry = false) {
         let outbound;
         let inError = false;
         if (retry) {
-          log("Retrying connection to dead server: \x1b[31m"+server+"\x1b[0m", "W");
+          log(`Retrying connection to dead server: ${r}${server}${reset}`, "W");
         }
         outbound = new WebSocket("wss://"+server);
 
@@ -913,7 +924,7 @@ function connectToOtherServers(retry = false) {
           payload.address = host;
           payload.name = serverName;
           sendData(outbound, payload);
-          log("\x1b[32m"+server+"\x1b[0m Established as new outbound server connection", "S");
+          log(`${g}${server}${reset} Established as new outbound server connection`, "S");
           thisServer.connected = true;
           thisServer.active = true;
           thisServer.attempts = 0;
@@ -963,7 +974,7 @@ function connectToOtherServers(retry = false) {
                 });
                 break;
               default:
-                log("Received unknown from other server: \x1b[2m"+msgJSON+"\x1b[0m", "W");
+                log(`Received unknown from other server: ${dim}${msgJSON}${reset}`, "W");
             }
           } catch (e) {
             try {
@@ -992,7 +1003,7 @@ function connectToOtherServers(retry = false) {
           thisServer.socket = null;
           thisServer.attempts++;
           if (!inError) {
-            log("\x1b[31m"+server+"\x1b[0m Outbound connection closed", "W");
+            log(`${r}${server}${reset} Outbound connection closed`, "W");
             sendServerListToClients();
             let payload = {};
             payload.command = "server";
@@ -1003,11 +1014,11 @@ function connectToOtherServers(retry = false) {
 
         outbound.on('error', function error() {
           inError = true;
-          log("Could not connect to server: \x1b[31m"+server+"\x1b[0m", "E");
+          log(`Could not connect to server: ${r}${server}${reset}`, "E");
         });
       } else if (!thisServer.connected && thisServer.active) {
         thisServer.active = false;
-        log("Server not responding, changing status to dead: \x1b[31m"+server+"\x1b[0m", "E");
+        log(`Server not responding, changing status to dead: ${r}${server}${reset}`, "E");
       }
     }
   }
@@ -1360,19 +1371,19 @@ function loadConfig(fromFile = true) {
   ownHTTPserver = (ownHTTPserver === "false" || ownHTTPserver === false) ? false : true;
   port = parseInt(port);
 
-  log(`WebTally server running on port: \x1b[33m${port}\x1b[37m`);
+  log(`WebTally server running on port: ${y}${port}${w}`);
   switch (loggingLevel) {
     case "A":
-      log("Logging set to \x1b[33mAll\x1b[37m");
+      log(`Logging set to ${y}All${w}`);
       break;
     case "D":
-      log("Logging set to \x1b[33mDebug\x1b[37m");
+      log(`Logging set to ${y}Debug${w}`);
       break;
     case "W":
-      log("Logging set to \x1b[33mWarning\x1b[37m & \x1b[33mError\x1b[37m");
+      log(`Logging set to ${y}Warning${w} & ${y}Error${w}`);
       break;
     case "E":
-      log("Logging set to \x1b[33mError\x1b[37m only");
+      log(`Logging set to ${y}Error${w} only`);
       break;
     default:
   }
@@ -1385,13 +1396,13 @@ function loadConfig(fromFile = true) {
   let yyyy = today.getFullYear();
 
   let fileName = `${configLocation}/tallyServer-[${yyyy}-${mm}-${dd}].log`;
-  log(`Logging to file: \x1b[33m${fileName}\x1b[37m`);
+  log(`Logging to file: ${y}${fileName}${w}`);
 
   if (typeof config.dataBase !== "undefined" && config.dataBase !== false) {
-    log(`Setting up \x1b[33mwith\x1b[37m database connection`, "C");
+    log(`Setting up ${y}with${w} database connection`, "C");
     //Database connection code here
   } else {
-    log(`Running \x1b[33mwithout\x1b[37m database connection`, "C");
+    log(`Running ${y}without${w} database connection`, "C");
   }
 }
 
@@ -1506,14 +1517,14 @@ function log(message, level, lineNumInp) {
   let timeString = `${hours}:${minutes}:${seconds}.${millis}`;
 
   if (typeof message === "undefined") {
-    log(`Log message from line \x1b[35m${lineNum}\x1b[0m is not defined`, "E");
+    log(`Log message from line ${p}${lineNum}${reset} is not defined`, "E");
     return;
   } else if (typeof message !== "string") {
-    log(`Log message from line \x1b[35m${lineNum}\x1b[0m is not a string so attemping to stringify`, "A");
+    log(`Log message from line ${p}${lineNum}${reset} is not a string so attemping to stringify`, "A");
     try {
       message = JSON.stringify(message, null, 4);
     } catch (e) {
-      log(`Log message from line \x1b[35m${lineNum}\x1b[0m could not be converted to string`, "E");
+      log(`Log message from line ${p}${lineNum}${reset} could not be converted to string`, "E");
     }
   }
 
@@ -1521,47 +1532,42 @@ function log(message, level, lineNumInp) {
     lineNum = "";
   }
 
-  message = message.replace(/true/g, "\x1b[32mtrue\x1b[37m");
-  message = message.replace(/false/g, "\x1b[31mfalse\x1b[37m");
-  message = message.replace(/null/g, "\x1b[33mnull\x1b[37m");
-  message = message.replace(/undefined/g, "\x1b[33mundefined\x1b[37m");
+  message = message.replace(/true/g, g+"true"+w);
+  message = message.replace(/false/g, r+"false"+w);
+  message = message.replace(/null/g, y+"null"+w);
+  message = message.replace(/undefined/g, y+"undefined"+w);
 
   const regexp = / \((.*?):(.[0-9]*):(.[0-9]*)\)"/g;
   let matches = message.matchAll(regexp);
   for (let match of matches) {
-    message = message.replace(match[0],`" [\x1b[33m${match[1]}\x1b[0m] \x1b[35m(${match[2]}:${match[3]})\x1b[0m`);
+    message = message.replace(match[0],`" [${y}${match[1]}${reset}] ${p}(${match[2]}:${match[3]})${reset}`);
   }
 
+  let msg;
   switch (level) {
     case "A":
-      if (loggingLevel == "A") {
-        logFile(`[${timeString}]  INFO: ${message} ${lineNum}`);//White
-        console.log(`[${timeString}]\x1b[37m  INFO:\x1b[2m ${message}\x1b[1m \x1b[35m${lineNum}\x1b[0m`);
+      if (loggingLevel == "A") { //White
+        logSend(`[${timeString}]${w}  INFO: ${dim}${message}${bright} ${p}${lineNum}${reset}`);
       }
       break;
     case "D":
-      if (loggingLevel == "A" || loggingLevel == "D") {
-        logFile(`[${timeString}] DEBUG: ${message} ${lineNum}`);//Cyan
-        console.log(`[${timeString}]\x1b[36m DEBUG:\x1b[37m ${message} \x1b[35m${lineNum}\x1b[0m`);
+      if (loggingLevel == "A" || loggingLevel == "D") { //Cyan
+        logSend(`[${timeString}]${c} DEBUG: ${w}${message} ${p}${lineNum}${reset}`);
       }
       break;
     case "W":
-      if (loggingLevel != "E") {
-        logFile(`[${timeString}]  WARN: ${message} ${lineNum}`);//Yellow
-        console.log(`[${timeString}]\x1b[33m  WARN:\x1b[37m ${message} \x1b[35m${lineNum}\x1b[0m`);
+      if (loggingLevel != "E") { //Yellow
+        logSend(`[${timeString}]${y}  WARN: ${w}${message} ${p}${lineNum}${reset}`);
       }
       break;
-    case "E":
-      logFile(`[${timeString}] ERROR: ${message} ${lineNum}`);//Red
-      console.log(`[${timeString}]\x1b[31m ERROR:\x1b[37m ${message} \x1b[35m${lineNum}\x1b[0m`);
+    case "E": //Red
+      logSend(`[${timeString}]${r} ERROR: ${w}${message} ${p}${lineNum}${reset}`);
       break;
-    case "S":
-      logFile(`[${timeString}] NETWK: ${message} ${lineNum}`);//Blue
-      console.log(`[${timeString}]\x1b[34m NETWK:\x1b[37m ${message} \x1b[35m${lineNum}\x1b[0m`);
+    case "S": //Blue
+      logSend(`[${timeString}]${b} NETWK: ${w}${message} ${p}${lineNum}${reset}`);
       break;
-    default:
-      logFile(`[${timeString}]  CORE: ${message} ${lineNum}`);//Green
-      console.log(`[${timeString}]\x1b[32m  CORE:\x1b[37m ${message} \x1b[35m${lineNum}\x1b[0m`);
+    default: //Green
+      logSend(`[${timeString}]${g}  CORE: ${w}${message} ${p}${lineNum}${reset}`);
   }
 }
 
@@ -1572,6 +1578,19 @@ function logObj(message, obj, level) {
 
   let combined = `${message}: ${JSON.stringify(obj, null, 4)}`;
   log(combined, level, lineNum);
+}
+
+function logSend(message) {
+  logFile(message);
+  logSocket(message);
+  console.log(message);
+}
+
+function logSocket(message) {
+  if (typeof coreServer !== "undefined") {
+    let packet = makePacket({"command":"log","data":{"log":message}});
+    sendAdmins(packet);
+  }
 }
 
 function logFile(msg, sync = false) {
@@ -1588,7 +1607,8 @@ function logFile(msg, sync = false) {
     let yyyy = today.getFullYear();
 
     let fileName = `${dir}/tallyServer-[${yyyy}-${mm}-${dd}].log`;
-    let data = msg.replaceAll("\x1b[32m", "").replaceAll("\x1b[0m", "").replaceAll("\x1b[31m","").replaceAll("\x1b[37m", "").replaceAll("\x1b[33m", "").replaceAll("\x1b[35m", "")+"\n";
+    let data = msg.replaceAll(r, "").replaceAll(g, "").replaceAll(y, "").replaceAll(b, "").replaceAll(p, "").replaceAll(c, "").replaceAll(w, "").replaceAll(reset, "").replaceAll(dim, "").replaceAll(bright, "")+"\n";
+
     if (sync) {
       try {
         fs.appendFileSync(fileName, data);

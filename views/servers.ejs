@@ -14,7 +14,7 @@
     <script type="text/javascript" src="js/servers.js"></script>
     <link rel="stylesheet" href="css/servers.css">
   </head>
-  <body>
+  <body id="page" onresize="ResetColumnSizes()" onmouseup="EndDrag()" onmousemove="OnDrag(event)">
     <header id="n_new">
       <div class="versionInfo">
         WebTally v<%= version %>
@@ -28,6 +28,14 @@
       <button class="n_configDev headerButton blue">Show Devices</button>
       <button class="n_configInpt headerButton purple">Virtual Mixer</button>
     </header>
+
+    <div id="LogsDrag" onmousedown="StartRightDrag()"></div>
+
+    <aside id="n_logs">
+      <div id="serverLogs">
+
+      </div>
+    </aside>
 
     <main id="n_servers">
     </main>

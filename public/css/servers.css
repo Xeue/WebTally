@@ -3,6 +3,13 @@ body {
   font-family: raleway;
   font-variant-numeric: lining-nums;
   margin: 0px;
+  display: grid; 
+  grid-template-columns: 1fr 4px 0.5fr;
+  gap: 0px 0px; 
+  grid-template-areas: 
+    "Header Header Header" "Main LogsDrag Logs" "Footer Footer Footer"; 
+  height: 100vh;
+  grid-template-rows: min-content 1fr min-content;
 }
 
 .disconnected::after {
@@ -22,13 +29,31 @@ body {
   left: 0;
 }
 
-#n_servers {
-  padding: 100px;
-  padding-bottom: 50px;
+#n_logs {
+  grid-area: Logs;
+  overflow: auto;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: left;
+  flex-direction: column-reverse;
+}
+
+#serverLogs {
+  flex: 1;
+  font-family: Roboto Mono;
+  font-size: 10pt;
+  padding: 2px 4px;
+  background: repeating-linear-gradient( -55deg, #222, #222 10px, #232323 10px, #232323 20px );
+}
+
+#LogsDrag {
+	background: #545454;
+	grid-area: LogsDrag;
+	cursor: ew-resize;
+}
+
+#n_servers {
+  padding: 60px;
+  grid-column-start: 1;
+  resize: horizontal;
 }
 
 .n_server {
@@ -76,6 +101,58 @@ body {
   height: 150px;
   margin: 20px;
 }
+
+.log {
+  color: white;
+  white-space: break-spaces;
+}
+
+.cyanLog {
+  color: cyan;
+}
+.greenLog {
+  color: lime;
+}
+.purpleLog {
+  color: #fe00fe;
+}
+.blueLog {
+  color: blue;
+}
+.yellowLog {
+  color: yellow;
+}
+.redLog {
+  color: red;
+}
+.whiteLog {
+  color: white;
+}
+
+
+.whiteLog.dimLog {
+  color: #969696;
+}
+.greenLog.dimLog {
+  color: #005800;
+}
+.redLog.dimLog {
+  color: darkred;
+}
+.purpleLog.dimLog {
+  color: purple;
+}
+.blueLog.dimLog {
+  color: #2d2dc9;
+}
+.yellowLog.dimLog {
+  color: #9a9a00;
+}
+.cyanLog.dimLog {
+  color: #009e9e;
+}
+
+
 
 .tbl {
   display: table;
@@ -180,6 +257,7 @@ body {
   overflow: hidden;
   transition: 0.3s;
   justify-content: end;
+  grid-area: Header;
 }
 #new {
   border: 0;
