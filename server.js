@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url);
 const reader = require("readline-sync");
 
 const args = process.argv.slice(2);
-const version = "4.1";
+const version = "4.2";
 const type = "Server";
 const loadTime = new Date().getTime();
 
