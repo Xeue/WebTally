@@ -1,28 +1,28 @@
-<% if (get.connected == true || get.connected == "true") { %>
-  <div id="<%= get.ID %>" class="n_server n_online" data-name="<%= get.name %>">
+<% if (details.connected == true || details.connected == "true") { %>
+  <div id="<%= details.ID %>" class="n_server n_online" data-name="<%= details.Name %>">
     <header class="n_status"></header>
 <% } else { %>
-  <div id="<%= get.ID %>" class="n_server n_offline" data-name="<%= get.name %>">
+  <div id="<%= details.ID %>" class="n_server n_offline" data-name="<%= details.Name %>">
     <header class="n_status"></header>
 <% } %>
   <figure class="n_img"></figure>
   <section class="tbl">
     <div class="tblRow">
       <div class="tblCell t_rght">Name:</div>
-      <div class="tblCell"><%= get.name %></div>
+      <div class="tblCell"><%= details.Name %></div>
     </div>
     <div class="tblRow">
 
       <div class="tblCell t_rght">Address:</div>
-      <div class="tblCell"><%= get.address %></div>
+      <div class="tblCell"><%= details.address %></div>
     </div>
     <div class="tblRow">
       <div class="tblCell t_rght">ID:</div>
-      <div class="tblCell"><%= get.ID %></div>
+      <div class="tblCell"><%= details.ID %></div>
     </div>
     <div class="tblRow">
       <div class="tblCell t_rght">Version:</div>
-      <div class="tblCell"><%= get.version %></div>
+      <div class="tblCell"><%= details.version %></div>
     </div>
   </section>
   <footer class="n_bttns flxCol">

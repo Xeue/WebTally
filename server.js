@@ -245,7 +245,7 @@ function setUpStates() {
     "tally":{
       "data":{},
       update(busses, source = "default") {
-        let savedBusses = state.tally.data[source];
+        let savedBusses = this.data[source];
 
         for (let busName in busses) {
           if (busses.hasOwnProperty(busName)) {
@@ -255,7 +255,7 @@ function setUpStates() {
                 let cam = bus[camNum];
 
                 if (typeof savedBusses[busName] == "undefined") {
-                  state.tally.newBus(busName, source);
+                  this.newBus(busName, source);
                 }
 
                 let savedBus = savedBusses[busName];
@@ -277,7 +277,7 @@ function setUpStates() {
         }
 
         if (dataBase === false) {
-          let data = JSON.stringify(state.tally.data);
+          let data = JSON.stringify(this.data);
           fs.writeFile(fileNameTally, data, err => {
             if (err) {
               log("Could not save tally state to file, permissions?", "W");
@@ -289,25 +289,25 @@ function setUpStates() {
 
       },
       newSoruce(source) {
-        state.tally.data[source] = {
+        this.data[source] = {
           "busses":{
             "main":{}
           }
         };
       },
       newBus(busName, source = "default") {
-        if (typeof state.tally.data[source] == "undefined") {
-          state.tally.newSoruce(source);
+        if (typeof this.data[source] == "undefined") {
+          this.newSoruce(source);
         }
-        state.tally.data[source][busName] = {};
+        this.data[source][busName] = {};
       },
       updateClients(socket = null) {
         setTimeout(function() {
-          for (var source in state.tally.data) {
-            if (state.tally.data.hasOwnProperty(source)) {
+          for (var source in this.data) {
+            if (this.data.hasOwnProperty(source)) {
               let payload = {};
               payload.busses = {};
-              payload.busses = state.tally.data[source];
+              payload.busses = this.data[source];
               payload.command = "tally";
               payload.source = source;
               let packet = makePacket(payload);
@@ -322,11 +322,11 @@ function setUpStates() {
       },
       updateServer(socket) {
         setTimeout(function() {
-          for (var source in state.tally.data) {
-            if (state.tally.data.hasOwnProperty(source)) {
+          for (var source in this.data) {
+            if (this.data.hasOwnProperty(source)) {
               let payload = {};
               payload.busses = {};
-              payload.busses = state.tally.data[source];
+              payload.busses = this.data[source];
               payload.command = "tally";
               payload.source = source;
               let packet = makePacket(payload);
@@ -337,7 +337,7 @@ function setUpStates() {
       },
       clean() {
         log("Clearing tally states");
-        state.tally.data = {};
+        this.data = {};
         fs.unlink(fileNameTally, (err) => {
           if (err) {
             log("Could not remove tally states file, it either didn't exists or permissions?", "W");
@@ -350,9 +350,9 @@ function setUpStates() {
     "servers":{
       "data":{},
       add(url, header, name) {
-        if (!state.servers.data.hasOwnProperty(url) && url !== host) {
+        if (!this.data.hasOwnProperty(url) && url !== host) {
           log("Adding new address: "+url, "D");
-          state.servers.data[url] = {
+          this.data[url] = {
             "socket":null,
             "active":true,
             "connected":false,
@@ -362,12 +362,12 @@ function setUpStates() {
             "Name":`Webtally v4 server`
           };
           if (typeof header !== "undefined") {
-            state.servers.data[url].version = header.version;
-            state.servers.data[url].ID = header.fromID;
+            this.data[url].version = header.version;
+            this.data[url].ID = header.fromID;
             if (typeof name !== "undefined") {
-              state.servers.data[address].Name = name;
+              this.data[address].Name = name;
             } else {
-              state.servers.data[address].Name = `Webtally v${header.version} server`;
+              this.data[address].Name = `Webtally v${header.version} server`;
             }
           }
           connectToOtherServers();
@@ -376,45 +376,45 @@ function setUpStates() {
           }
         } else if (url !== host) {
           log("Address already registered", "D");
-          if (typeof state.servers.data[url].active === false) {
-            state.servers.data[url].active = true;
+          if (typeof this.data[url].active === false) {
+            this.data[url].active = true;
             connectToOtherServers();
           }
         }
 
-        state.servers.save();
+        this.save();
       },
       update(address, header, name) {
-        if (state.servers.data.hasOwnProperty(address) && address !== host) {
+        if (this.data.hasOwnProperty(address) && address !== host) {
           log("Updating server details for: "+address, "D");
-          state.servers.data[address].version = header.version;
-          state.servers.data[address].ID = header.fromID;
+          this.data[address].version = header.version;
+          this.data[address].ID = header.fromID;
           if (typeof name !== "undefined") {
-            state.servers.data[address].Name = name;
+            this.data[address].Name = name;
           } else {
-            state.servers.data[address].Name = `Webtally v${header.version} server`;
+            this.data[address].Name = `Webtally v${header.version} server`;
           }
           let payload = {};
           payload.command = "server";
-          payload.servers = state.servers.getDetails(address, true);
+          payload.servers = this.getDetails(address, true);
           sendAdmins(makePacket(payload));
           sendServerListToClients();
         } else {
           log("Address not registered, adding: "+address, "D");
-          state.servers.add(address, header, name);
+          this.add(address, header, name);
         }
 
-        state.servers.save();
+        this.save();
       },
       remove(url) {
-        if (state.servers.data.hasOwnProperty(url)) {
+        if (this.data.hasOwnProperty(url)) {
           log(`Removing address and closing outbound connection to: ${y}${url}${reset}`, "D");
           try {
-            state.servers.data[url].socket.close();
+            this.data[url].socket.close();
           } catch (e) {
             log("Server connection already closed","W");
           }
-          delete state.servers.data[url];
+          delete this.data[url];
         }
 
         coreServer.clients.forEach(function each(client) {
@@ -425,13 +425,13 @@ function setUpStates() {
 
         let payload = {};
         payload.command = "server";
-        payload.servers = state.servers.getDetails(url, true);
+        payload.servers = this.getDetails(url, true);
         sendAdmins(makePacket(payload));
-        state.servers.save();
+        this.save();
       },
       getURLs(print = false) {
         let serverDataList = [];
-        let serverData = state.servers.data;
+        let serverData = this.data;
         for (var server in serverData) {
           if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function' && serverData[server].connected == true) {
             serverDataList.push(server);
@@ -444,7 +444,7 @@ function setUpStates() {
       },
       getStatus(print = false) {
         let serverDataTrimmed = {};
-        let serverData = state.servers.data;
+        let serverData = this.data;
         for (var server in serverData) {
           if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function') {
             serverDataTrimmed[server] = {};
@@ -460,16 +460,16 @@ function setUpStates() {
       getDetails(server = "ALL", print = false) {
         let details = {};
         if (server == "ALL") {
-          for (var data in state.servers.data) {
-            if (state.servers.data.hasOwnProperty(data)) {
+          for (var data in this.data) {
+            if (this.data.hasOwnProperty(data)) {
               details[data] = {};
               details[data].socket = "SOCKET OBJECT";
-              details[data].active = state.servers.data[data].active;
-              details[data].connected = state.servers.data[data].connected;
-              details[data].attempts = state.servers.data[data].attempts;
-              details[data].version = state.servers.data[data].version;
-              details[data].ID = state.servers.data[data].ID;
-              details[data].Name = state.servers.data[data].Name;
+              details[data].active = this.data[data].active;
+              details[data].connected = this.data[data].connected;
+              details[data].attempts = this.data[data].attempts;
+              details[data].version = this.data[data].version;
+              details[data].ID = this.data[data].ID;
+              details[data].Name = this.data[data].Name;
             }
           }
 
@@ -482,16 +482,18 @@ function setUpStates() {
               }
             }
           }
+        } else if (server == host) {
+          details = this.getThisServer();
         } else {
-          if (typeof state.servers.data[server] !== "undefined") {
+          if (typeof this.data[server] !== "undefined") {
             details[server] = {};
             details[server].socket = "SOCKET OBJECT";
-            details[server].active = state.servers.data[server].active;
-            details[server].connected = state.servers.data[server].connected;
-            details[server].attempts = state.servers.data[server].attempts;
-            details[server].version = state.servers.data[server].version;
-            details[server].ID = state.servers.data[server].ID;
-            details[server].Name = state.servers.data[server].Name;
+            details[server].active = this.data[server].active;
+            details[server].connected = this.data[server].connected;
+            details[server].attempts = this.data[server].attempts;
+            details[server].version = this.data[server].version;
+            details[server].ID = this.data[server].ID;
+            details[server].Name = this.data[server].Name;
           }
         }
         if (print === true) {
@@ -515,7 +517,7 @@ function setUpStates() {
       },
       save() {
         if (dataBase === false) {
-          let data = JSON.stringify(state.servers.getDetails("ALL", true));
+          let data = JSON.stringify(this.getDetails("ALL", true));
           fs.writeFile(fileNameServers, data, err => {
             if (err) {
               log("Could not save servers state to file, permissions?", "W");
@@ -527,11 +529,11 @@ function setUpStates() {
       },
       clean() {
         log("Clearing server states");
-        let servers = state.servers.getURLs();
+        let servers = this.getURLs();
         for (var i = 0; i < servers.length; i++) {
-          state.servers.remove(servers[i]);
+          this.remove(servers[i]);
         }
-        state.servers.data = {};
+        this.data = {};
         fs.unlink(fileNameServers, (err) => {
           if (err) {
             log("Could not remove server states file, it either didn't exists or permissions?", "W");
@@ -546,9 +548,9 @@ function setUpStates() {
       add(msgObj, socket) {
         let hObj = msgObj.header;
         let pObj = msgObj.payload;
-        let clientsData = state.clients.data;
+        let clientsData = this.data;
         let clientData;
-        if (hObj.type != "Server" && hObj.type != "Config" && hObj.type != "Admin") {
+        if (hObj.type != "Server") {
           if (hObj.fromID == socket.ID) {
             clientsData[socket.ID] = {};
             clientData = clientsData[socket.ID];
@@ -569,10 +571,10 @@ function setUpStates() {
             clientData.local = false;
           }
         }
-        state.clients.save();
+        this.save();
       },
       addAll(clients) {
-        let clientsData = state.clients.data;
+        let clientsData = this.data;
         for (var client in clients) {
           if (clients.hasOwnProperty(client) && !clientsData.hasOwnProperty(client)) {
             clientsData[client] = {};
@@ -587,11 +589,11 @@ function setUpStates() {
       update(msgObj, socket) {
         let hObj = msgObj.header;
         let pObj = msgObj.payload;
-        let clientsData = state.clients.data;
+        let clientsData = this.data;
         let clientData;
-        if (hObj.type != "Server" && hObj.type != "Config" && hObj.type != "Admin") {
+        if (hObj.type != "Server") {
           if (typeof clientsData[hObj.fromID] == "undefined") {
-            state.clients.add(msgObj, socket);
+            this.add(msgObj, socket);
           } else if (hObj.fromID == socket.ID) {
             clientsData[socket.ID] = {};
             clientData = clientsData[socket.ID];
@@ -614,7 +616,7 @@ function setUpStates() {
         }
       },
       remove(socket) {
-        let clientsData = state.clients.data;
+        let clientsData = this.data;
         if (typeof socket == "string") {
           if (typeof clientsData[socket] !== "undefined" && clientsData[socket].local == true) {
             clientsData[socket].socket.terminate();
@@ -632,10 +634,10 @@ function setUpStates() {
             }
           }
         }
-        state.clients.save();
+        this.save();
       },
       getDetails(socket = "ALL", print = false) {
-        let clientsData = state.clients.data;
+        let clientsData = this.data;
         let details = {};
         if (socket = "ALL") {
           for (var client in clientsData) {
@@ -676,7 +678,7 @@ function setUpStates() {
       },
       save() {
         if (dataBase === false) {
-          let data = JSON.stringify(state.clients.getDetails("ALL"));
+          let data = JSON.stringify(this.getDetails("ALL"));
           fs.writeFile(fileNameClients, data, err => {
             if (err) {
               log("Could not save clients state to file, permissions?", "W");
@@ -688,7 +690,7 @@ function setUpStates() {
       },
       clean() {
         log("Clearing clients states");
-        state.clients.data = {};
+        this.data = {};
         fs.unlink(fileNameClients, (err) => {
           if (err) {
             log("Could not remove client states file, it either didn't exists or permissions?", "W");
@@ -835,6 +837,8 @@ function coreDoRegister(socket, msgObj) {
     case "Config":
       log(`${g}${hObj.fromID}${reset} Registered as new config controller`, "D");
       sendData(socket, {"command":"clients","clients":state.clients.getDetails()});
+      socket.connected = true;
+      state.clients.add(msgObj, socket);
       break;
     case "Server":
       let address = pObj.address;
@@ -852,6 +856,8 @@ function coreDoRegister(socket, msgObj) {
       payload.command = "server";
       payload.servers = state.servers.getDetails("ALL");
       payload.servers[host] = state.servers.getThisServer();
+      socket.connected = true;
+      state.clients.add(msgObj, socket);
       sendAdmins(makePacket(payload));
       break;
     default:
@@ -1126,7 +1132,7 @@ function sendSelf(json, socket) {
   socket.send(JSON.stringify(returnObj));
 }
 
-function makeHeader(intType = type, intVersion = version, intLoadTime = loadTime) {
+function makeHeader(intType = type, intVersion = version) {
   let header = {};
   header.fromID = myID;
   header.timestamp = new Date().getTime();
@@ -1262,14 +1268,16 @@ function startHTTPS() {
     });
 
     app.get('/components/config', function(request, response) {
-      log("Serving config page", "A");
+      log("Sending config component", "A");
       response.header('Content-type', 'text/html');
       response.render('components/config', {get: request.query});
     });
     app.get('/components/server', function(request, response) {
-      log("Serving config page", "A");
+      log("Sending server component", "A");
+      let details = state.servers.getDetails(request.query.address);
+      details.address = request.query.address;
       response.header('Content-type', 'text/html');
-      response.render('components/server', {get: request.query});
+      response.render('components/server', {details: details});
     });
 
     return serverHTTPS;

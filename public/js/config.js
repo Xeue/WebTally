@@ -73,7 +73,7 @@ function socketConnect() {
             }
           }
         }
-      } else if (payload.command == "register" && header.type != "Config") {
+      } else if (payload.command == "register" && header.type !== "Admin" && header.type !== "Config") {
         $device = $(document.getElementById(header.fromID));
         if ($device.length == 0) {
           URL = "components/config?online=true&id="+header.fromID+"&camera="+payload.data.camera+"&device="+header.type+"&version="+header.version;
@@ -85,7 +85,7 @@ function socketConnect() {
       } else if (payload.command == "clients") {
         for (var client in payload.clients) {
           let thisData = payload.clients[client];
-          if (payload.clients.hasOwnProperty(client)) {
+          if (payload.clients.hasOwnProperty(client) && thisData.type !== "Admin" && thisData.type !== "Config") {
 
             $device = $(document.getElementById(client));
             if ($device.length !== 0) {
