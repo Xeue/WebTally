@@ -15,6 +15,7 @@ As of v4 there are a whole host of new features.
 5. Server seperated from UI
 6. Option for self hosted UI
 7. Allows remote config and control of clients
+8. Server management UI
 
 ---
 
@@ -23,9 +24,8 @@ As of v4 there are a whole host of new features.
 Features yet to be implemented
 
 1. Local database state saving
-2. Server management UI
-3. Finish implementing busses and sources and their UI
-4. Client closest connection finding
+2. Finish implementing busses and sources and their UI
+3. Client closest connection finding
 
 ---
 
