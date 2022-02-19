@@ -99,7 +99,7 @@ function socketDoMessage(e) {
               $device.addClass("n_offline");
             }
           } else {
-            URL = "components/server?connected="+thisData.connected+"&name="+thisData.Name+"&ID="+thisData.ID+"&address="+server+"&version="+thisData.version;
+            URL = "components/server?address="+server;
   
             $.get(URL, function(data) {
               $("#n_servers").append(data);
@@ -203,11 +203,9 @@ $(document).ready(function() {
     args.pk = $srv.attr("id");
 
     if ($trg.hasClass("n_configDev")) {
-      port = $trg.closest(".n_server").data("port");
       URL = "config";
       window.open(URL, '_blank');
     } else if ($trg.hasClass("n_configInpt")) {
-      port = $trg.closest(".n_server").data("port");
       URL = "mixer";
       window.open(URL, '_blank');
     } else if ($trg.hasClass("start") && $srv.hasClass("n_offline")) {
