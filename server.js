@@ -238,6 +238,7 @@ function setUpStates() {
   let fileNameTally = dir+"/tallyState.json";
   let fileNameServers = dir+"/serversState.json";
   let fileNameClients = dir+"/clientsState.json";
+  let fileNamemixers = dir+"/mixerState.json";
   let fileNameProperties = dir+"/server.properties";
 
   // State functions defined here
