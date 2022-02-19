@@ -699,6 +699,163 @@ function setUpStates() {
           }
         });
       }
+    },
+    "mixer":{
+      "data":{},
+      add(msgObj, socket) {
+        let hObj = msgObj.header;
+        let pObj = msgObj.payload;
+        let mixersData = this.data;
+        let mixerData;
+        if (hObj.type != "Server") {
+          if (hObj.fromID == socket.ID) {
+            mixersData[socket.ID] = {};
+            mixerData = mixersData[socket.ID];
+            mixerData.camera = socket.camera;
+            mixerData.connected = socket.connected;
+            mixerData.type = socket.type;
+            mixerData.version = socket.version;
+            mixerData.local = true;
+            mixerData.pingStatus = socket.pingStatus;
+            mixerData.socket = socket;
+          } else {
+            mixersData[hObj.fromID] = {};
+            mixerData = mixersData[hObj.fromID];
+            mixerData.camera = pObj.camera;
+            mixerData.connected = hObj.active;
+            mixerData.type = hObj.type;
+            mixerData.version = hObj.version;
+            mixerData.local = false;
+          }
+        }
+        this.save();
+      },
+      addAll(mixers) {
+        let mixersData = this.data;
+        for (var mixer in mixers) {
+          if (mixers.hasOwnProperty(mixer) && !mixersData.hasOwnProperty(mixer)) {
+            mixersData[mixer] = {};
+            mixersData[mixer].camera = mixers[mixer].camera;
+            mixersData[mixer].connected = mixers[mixer].active;
+            mixersData[mixer].type = mixers[mixer].type;
+            mixersData[mixer].version = mixers[mixer].version;
+            mixersData[mixer].local = false;
+          }
+        }
+      },
+      update(msgObj, socket) {
+        let hObj = msgObj.header;
+        let pObj = msgObj.payload;
+        let mixersData = this.data;
+        let mixerData;
+        if (hObj.type != "Server") {
+          if (typeof mixersData[hObj.fromID] == "undefined") {
+            this.add(msgObj, socket);
+          } else if (hObj.fromID == socket.ID) {
+            mixersData[socket.ID] = {};
+            mixerData = mixersData[socket.ID];
+            mixerData.camera = socket.camera;
+            mixerData.connected = socket.connected;
+            mixerData.type = socket.type;
+            mixerData.version = socket.version;
+            mixerData.local = true;
+            mixerData.pingStatus = socket.pingStatus;
+            mixerData.socket = socket;
+          } else {
+            mixersData[hObj.fromID] = {};
+            mixerData = mixersData[hObj.fromID];
+            mixerData.camera = pObj.camera;
+            mixerData.connected = hObj.active;
+            mixerData.type = hObj.type;
+            mixerData.version = hObj.version;
+            mixerData.local = false;
+          }
+        }
+      },
+      remove(socket) {
+        let mixersData = this.data;
+        if (typeof socket == "string") {
+          if (typeof mixersData[socket] !== "undefined" && mixersData[socket].local == true) {
+            mixersData[socket].socket.terminate();
+            delete mixersData[socket];
+          } else {
+            delete mixersData[socket];
+          }
+        } else {
+          if (socket.type != "Server" && socket.type != "Config" && socket.type != "Admin") {
+            if (typeof mixersData[socket.ID] !== "undefined" && mixersData[socket.ID].local == true) {
+              delete mixersData[socket.ID];
+              socket.terminate();
+            } else {
+              delete mixersData[socket.ID];
+            }
+          }
+        }
+        this.save();
+      },
+      getDetails(socket = "ALL", print = false) {
+        let mixersData = this.data;
+        let details = {};
+        if (socket = "ALL") {
+          for (var mixer in mixersData) {
+            if (mixersData.hasOwnProperty(mixer)) {
+              details[mixer] = {};
+              details[mixer].camera = mixersData[mixer].camera;
+              details[mixer].connected = mixersData[mixer].connected;
+              details[mixer].type = mixersData[mixer].type;
+              details[mixer].version = mixersData[mixer].version;
+              details[mixer].local = mixersData[mixer].local;
+              if (mixersData[mixer].local == true) {
+                details[mixer].pingStatus = mixersData[mixer].pingStatus;
+                details[mixer].socket = "SOCKET OBJECT";
+              }
+            }
+          }
+          if (print === true) {
+            log("mixers details", details, "A");
+          } else if (print == "S") {
+            logObj("mixers details", details, "S");
+          }
+        } else if (typeof mixersData[socket.ID] !== "undefined") {
+          details[socket.ID].camera = mixersData[socket.ID].camera;
+          details[socket.ID].connected = mixersData[socket.ID].connected;
+          details[socket.ID].type = mixersData[socket.ID].type;
+          details[socket.ID].version = mixersData[socket.ID].version;
+          if (mixerData.local == true) {
+            details[socket.ID].pingStatus = mixersData[socket.ID].pingStatus;
+            details[socket.ID].socket = "SOCKET OBJECT";
+          }
+          if (print) {
+            log("mixers details: "+JSON.stringify(details, null, 4), "A");
+          }
+        } else {
+          details = false;
+        }
+        return details;
+      },
+      save() {
+        if (dataBase === false) {
+          let data = JSON.stringify(this.getDetails("ALL"));
+          fs.writeFile(fileNamemixers, data, err => {
+            if (err) {
+              log("Could not save mixers state to file, permissions?", "W");
+            }
+          });
+        } else {
+          log("Not implemented yet - database connection", "W");
+        }
+      },
+      clean() {
+        log("Clearing mixers states");
+        this.data = {};
+        fs.unlink(fileNamemixers, (err) => {
+          if (err) {
+            log("Could not remove mixer states file, it either didn't exists or permissions?", "W");
+          } else {
+            log("Cleared mixers states");
+          }
+        });
+      }
     }
   };
 
@@ -859,6 +1016,13 @@ function coreDoRegister(socket, msgObj) {
       socket.connected = true;
       state.clients.add(msgObj, socket);
       sendAdmins(makePacket(payload));
+      break;
+    case "Mixer":
+      log(`${g}${hObj.fromID}${reset} Registered as new vision mixer/GPI controler`, "D");
+      socket.connected = true;
+      state.mixer.add(msgObj, socket);
+      sendConfigs(msgObj, socket);
+      sendServers(msgObj);
       break;
     default:
       log(`${g}${hObj.fromID}${reset} Registered as new client`, "D");
