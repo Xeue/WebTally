@@ -1,0 +1,7 @@
+{
+  "port":4445,
+  "host":"wss.chilton.tv/ws",
+  "loggingLevel":"W",
+  "createLogFile":true,
+  "otherServers":["wss.chilton.tv/ws"]
+}

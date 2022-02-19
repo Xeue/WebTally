@@ -62,17 +62,10 @@ startLoops();
 
 function startServer() {
   if (ownHTTPserver) {
-    serverHTTPS = startHTTPS();
-    log("Running as own HTTPS server and hosting UI internally");
-
     coreServer = new WebSocketServer({ noServer: true });
 
-    serverHTTPS.on('upgrade', (request, socket, head) => {
-      log("Upgrade request received", "D");
-      coreServer.handleUpgrade(request, socket, head, socket => {
-        coreServer.emit('connection', socket, request);
-      })
-    })
+    serverHTTPS = startHTTPS();
+    log("Running as own HTTPS server and hosting UI internally");
   } else {
     log(`Running as ${y}standalone${w} websocket server`);
     coreServer = new WebSocketServer({ port: port });
@@ -214,7 +207,7 @@ function startServer() {
   });
 
   if (ownHTTPserver) {
-    serverHTTPS.listen(port)
+    serverHTTPS.listen(port);
   }
 }
 
@@ -510,7 +503,7 @@ function setUpStates() {
           "version":version,
           "ID":myID,
           "Name":serverName
-        }
+        };
         return thisServer;
       },
       save() {
@@ -637,7 +630,7 @@ function setUpStates() {
       getDetails(socket = "ALL", print = false) {
         let clientsData = state.clients.data;
         let details = {};
-        if (socket = "ALL") {
+        if (socket == "ALL") {
           for (var client in clientsData) {
             if (clientsData.hasOwnProperty(client)) {
               details[client] = {};
@@ -702,7 +695,7 @@ function setUpStates() {
 
   if (!fs.existsSync(dir)){
     fs.mkdirSync(dir, { recursive: true });
-  };
+  }
 
   fs.readFile(fileNameTally, function(err, data) {
     if (typeof data !== "undefined") {
@@ -762,12 +755,12 @@ function setUpStates() {
       try {
         properties = JSON.parse(data);
         myID = properties.myID;
-        log(`Server ID is: ${y}${myID}${w}`)
+        log(`Server ID is: ${y}${myID}${w}`);
       } catch (e) {
         log("Could not parse server properties", "W");
         properties = {
           "myID": myID
-        }
+        };
         fs.writeFile(fileNameProperties, JSON.stringify(properties), err => {
           if (err) {
             log("Could not save server properties to file, permissions?", "W");
@@ -779,7 +772,7 @@ function setUpStates() {
       log("Could not read server properties from file, either invalid permissions or it doesn't exist yet", "W");
       let properties = {
         "myID": myID
-      }
+      };
       fs.writeFile(fileNameProperties, JSON.stringify(properties), err => {
         if (err) {
           log("Could not save server properties to file, permissions?", "W");
@@ -1211,10 +1204,18 @@ function startHTTPS() {
     let options = {
       cert: sslCert,
       key: sslKey
-    }
+    };
 
     const app = express();
     const serverHTTPS = createServer(options, app);
+
+    serverHTTPS.on('upgrade', (request, socket, head) => {
+      log("Upgrade request received", "D");
+      coreServer.handleUpgrade(request, socket, head, socket => {
+        coreServer.emit('connection', socket, request);
+      });
+    });
+
     app.set('views', __dirname + '/views');
     app.set('view engine', 'ejs');
     app.use(express.static('public'));
@@ -1507,6 +1508,9 @@ function log(message, level, lineNumInp) {
   let lineNum = '('+stack[2].substr(stack[2].indexOf("server.js:")+10);
   if (typeof lineNumInp !== "undefined") {
     lineNum = lineNumInp;
+  }
+  if (lineNum[lineNum.length - 1] !== ")") {
+    lineNum += ")";
   }
   let timeNow = new Date();
   let hours = String(timeNow.getHours()).padStart(2, "0");
