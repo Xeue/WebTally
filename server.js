@@ -79,7 +79,7 @@ function startServer() {
     // Sending server list
     let payload = {};
     payload.command = "server";
-    payload.servers = state.servers.getStatus();
+    payload.servers = state.servers.getStatus("ALL");
     sendData(socket, payload);
 
     socket.pingStatus = "alive";
@@ -231,7 +231,7 @@ function setUpStates() {
   let fileNameTally = dir+"/tallyState.json";
   let fileNameServers = dir+"/serversState.json";
   let fileNameClients = dir+"/clientsState.json";
-  let fileNamemixers = dir+"/mixerState.json";
+  let fileNameMixers = dir+"/mixerState.json";
   let fileNameProperties = dir+"/server.properties";
 
   // State functions defined here
@@ -240,6 +240,9 @@ function setUpStates() {
       "data":{},
       update(busses, source = "default") {
         let savedBusses = this.data[source];
+        if (typeof savedBusses == "undefined") {
+          savedBusses = {};
+        }
 
         for (let busName in busses) {
           if (busses.hasOwnProperty(busName)) {
@@ -247,7 +250,6 @@ function setUpStates() {
             for (var camNum in bus) {
               if (bus.hasOwnProperty(camNum)) {
                 let cam = bus[camNum];
-
                 if (typeof savedBusses[busName] == "undefined") {
                   this.newBus(busName, source);
                 }
@@ -297,11 +299,11 @@ function setUpStates() {
       },
       updateClients(socket = null) {
         setTimeout(function() {
-          for (var source in this.data) {
-            if (this.data.hasOwnProperty(source)) {
+          for (var source in state.tally.data) {
+            if (state.tally.data.hasOwnProperty(source)) {
               let payload = {};
               payload.busses = {};
-              payload.busses = this.data[source];
+              payload.busses = state.tally.data[source];
               payload.command = "tally";
               payload.source = source;
               let packet = makePacket(payload);
@@ -477,7 +479,7 @@ function setUpStates() {
             }
           }
         } else if (server == host) {
-          details = this.getThisServer();
+          details[server] = this.getThisServer();
         } else {
           if (typeof this.data[server] !== "undefined") {
             details[server] = {};
@@ -830,7 +832,7 @@ function setUpStates() {
       save() {
         if (dataBase === false) {
           let data = JSON.stringify(this.getDetails("ALL"));
-          fs.writeFile(fileNamemixers, data, err => {
+          fs.writeFile(fileNameMixers, data, err => {
             if (err) {
               log("Could not save mixers state to file, permissions?", "W");
             }
@@ -842,7 +844,7 @@ function setUpStates() {
       clean() {
         log("Clearing mixers states");
         this.data = {};
-        fs.unlink(fileNamemixers, (err) => {
+        fs.unlink(fileNameMixers, (err) => {
           if (err) {
             log("Could not remove mixer states file, it either didn't exists or permissions?", "W");
           } else {
@@ -907,6 +909,25 @@ function setUpStates() {
     }
     if (err) {
       log("Could not read client state from file, either invalid permissions or it doesn't exist yet", "W");
+    }
+  });
+  fs.readFile(fileNameMixers, function(err, data) {
+    if (typeof data !== "undefined") {
+      let mixerData = state.mixer.data;
+      try {
+        mixerData = JSON.parse(data);
+        for (var mixer in mixerData) {
+          if (mixerData.hasOwnProperty(mixer)) {
+            //mixerData[mixer].socket = null;
+            //mixerData[mixer].connected = false;
+          }
+        }
+      } catch (e) {
+        log("Could not parse mixer state data", "W");
+      }
+    }
+    if (err) {
+      log("Could not read mixer state from file, either invalid permissions or it doesn't exist yet", "W");
     }
   });
   fs.readFile(fileNameProperties, function(err, data) {
@@ -1439,8 +1460,8 @@ function startHTTPS() {
       response.render('components/config', {get: request.query});
     });
     app.get('/components/server', function(request, response) {
-      log("Sending server component", "A");
-      let details = state.servers.getDetails(request.query.address);
+      log("Sending server component", "D");
+      let details = state.servers.getDetails(request.query.address)[request.query.address];
       details.address = request.query.address;
       response.header('Content-type', 'text/html');
       response.render('components/server', {details: details});

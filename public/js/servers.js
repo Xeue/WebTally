@@ -88,7 +88,7 @@ function socketDoMessage(e) {
       for (var server in payload.servers) {
         let thisData = payload.servers[server];
         if (payload.servers.hasOwnProperty(server) && thisData.ID !== undefined && thisData.active == true && thisData !== null) {
-  
+          console.log(thisData);
           $device = $(document.getElementById(thisData.ID));
           if ($device.length !== 0) {
             if (thisData.connected == true) {
@@ -100,12 +100,12 @@ function socketDoMessage(e) {
             }
           } else {
             URL = "components/server?address="+server;
-  
+
             $.get(URL, function(data) {
               $("#n_servers").append(data);
             });
           }
-  
+
           if (!servers.includes(server) && payload.servers[server].active == true) {
             servers.push(server);
           }
@@ -303,23 +303,23 @@ function EndDrag() {
 
 function OnDrag(event) {
 	if(isRightDragging) {
-		
+
 		let page = document.getElementById("page");
-		let rightcol = document.getElementById("LogsDrag");	
-		
+		let rightcol = document.getElementById("LogsDrag");
+
 		let rightColWidth = isRightDragging ? page.clientWidth - event.clientX : rightcol.clientWidth;
-		
+
 		let dragbarWidth = 4;
-		
+
 		let cols = [
 			page.clientWidth - (2*dragbarWidth) - rightColWidth,
 			dragbarWidth,
 			rightColWidth
 		];
-		
+
 		let newColDefn = cols.map(c => c.toString() + "px").join(" ");
 		page.style.gridTemplateColumns = newColDefn;
-		
+
 		event.preventDefault()
 	}
 }

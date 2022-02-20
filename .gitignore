@@ -10,6 +10,8 @@ dist/
 2/
 3/
 states/
+StagTV/
+tally2/
 config.conf
 nohup.out
 *.conf
