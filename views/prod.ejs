@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" href="img/icon/Yellow32.png" sizes="32x32">
+    <link rel="icon" href="img/icon/Yellow192.png" sizes="192x192">
+    <title><%= serverName %> – Tally Productions</title>
+    <link href="css/fonts.css" rel="stylesheet" type="text/css">
+    <script type="text/javascript" src="js/jQuery.js"></script>
+    <script type="text/javascript">
+      let servers = ['<%= host %>'];
+      let productionID = <%= prodID %>;
+    </script>
+    <script type="text/javascript" src="js/commonWS.js"></script>
+    <script type="text/javascript" src="js/prod.js"></script>
+    <link rel="stylesheet" href="css/tally.css">
+  </head>
+  <body>
+    <main class="disconnected">
+      <div id="settings">
+      </div>
+      <div id="s_sort" class="hidden">
+        <button id="s_sortBtn">Sort Order</button>
+      </div>
+      <section id="c_prods">
+      </section>
+    <main>
+  </body>
+</html>

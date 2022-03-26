@@ -1,82 +1,11 @@
 /*jshint esversion: 6 */
-var connecting = 0;
-var conn;
-var connCount = 0;
-var connNum = 1;
-var currentCon;
-var connectLoop;
-var forceShut = 0;
-
-var version = "4.0";
-var type = "Admin";
-var productionID = null;
-
-let loadTime = new Date().getTime();
-
-let myID = "A_"+loadTime+"_"+version;
-
-$("main").addClass("disconnected");
-
-function socketConnect() {
-  if (connecting == 0) {
-    connecting = 1;
-    if (connCount > 0) {
-      connNum++;
-      if (connNum > servers.length) {
-        connNum -= servers.length;
-      }
-      connCount = 0;
-    }
-    connCount++;
-    console.log("Connecting to: wss://"+servers[connNum-1]);
-    currentCon = servers[connNum-1];
-    conn = new WebSocket('wss://'+servers[connNum-1]);
-
-    conn.onopen = function(e) {
-      socketDoOpen();
-    };
-
-    conn.onmessage = function(e) {
-      socketDoMessage(e);
-    };
-
-    conn.onclose = function(e) {
-      socketDoClose();
-    };
-
-    conn.pong = function() {
-      let payload = {"command":"pong"};
-      sendData(payload);
-    };
-  }
-}
-
-socketConnect();
-
-function socketDoClose() {
-  if (forceShut == 0) {
-    console.log('Connection failed');
-    setTimeout(function(){socketConnect();}, 500);
-  }
-  connecting = 0;
-  forceShut = 0;
-  $("main").addClass("disconnected");
-}
 
 function socketDoOpen() {
-  console.log("Connection established!");
   console.log("Registering as config controler");
-  connecting = 0;
-  connCount = 0;
-  $("main").removeClass("disconnected");
   sendData({"command":"register"});
 }
 
-function socketDoMessage(e) {
-  let packet = JSON.parse(e.data);
-  let header = packet.header;
-  let payload = packet.payload;
-
+function socketDoMessage(packet, header, payload, e) {
   switch (payload.command) {
     case "disconnect":
       let serial = payload.data.ID;
@@ -88,7 +17,6 @@ function socketDoMessage(e) {
       for (var server in payload.servers) {
         let thisData = payload.servers[server];
         if (payload.servers.hasOwnProperty(server) && thisData.ID !== undefined && thisData.active == true && thisData !== null) {
-          console.log(thisData);
           $device = $(document.getElementById(thisData.ID));
           if ($device.length !== 0) {
             if (thisData.connected == true) {
@@ -117,9 +45,6 @@ function socketDoMessage(e) {
           }
         }
       }
-      break;
-    case "ping":
-      conn.pong();
       break;
     case "log":
       $log = $("<div class='log'></div>");
@@ -159,6 +84,8 @@ function socketDoMessage(e) {
       break;
   }
 }
+
+socketConnect("Admin");
 
 function getClass(num) {
   let value;
@@ -204,6 +131,9 @@ $(document).ready(function() {
 
     if ($trg.hasClass("n_configDev")) {
       URL = "config";
+      window.open(URL, '_blank');
+    } else if ($trg.hasClass("n_configProd")) {
+      URL = "productions";
       window.open(URL, '_blank');
     } else if ($trg.hasClass("n_configInpt")) {
       URL = "mixer";
@@ -251,39 +181,6 @@ $(document).ready(function() {
     }
   });
 });
-
-function makeHeader(productionID) {
-  let header = {};
-  header.fromID = myID;
-  if (productionID !== null) {
-    header.prodID = productionID;
-  }
-  header.timestamp = new Date().getTime();
-  header.version = version;
-  header.type = type;
-  if (connecting == 0) {
-    header.active = true;
-  } else {
-    header.active = false;
-  }
-  header.messageID = header.timestamp;
-  header.recipients = [
-    currentCon
-  ];
-  return header;
-}
-
-function sendData(payload) {
-  let packet = {};
-  let header = makeHeader();
-  packet.header = header;
-  packet.payload = payload;
-  conn.send(JSON.stringify(packet));
-}
-
-
-
-
 
 let isRightDragging = false;
 

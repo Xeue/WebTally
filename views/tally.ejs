@@ -10,9 +10,11 @@
     <script type="text/javascript" src="js/jQuery.js"></script>
     <script type="text/javascript">
       let CamNum = <%= camera %>;
-      let client = true;
+      let productionID = <%= prodID %>;
       let servers = ["<%= host %>"];
     </script>
+    <script type="text/javascript" src="js/commonWS.js"></script>
+    <script type="text/javascript" src="js/tally.js"></script>
     <link rel="stylesheet" href="css/tally.css">
   </head>
   <body>
@@ -28,6 +30,5 @@
         <%= camera %>
       </div>
     </main>
-    <script type="text/javascript" src="js/tally.js"></script>
   </body>
 </html>

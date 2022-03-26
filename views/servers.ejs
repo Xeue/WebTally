@@ -8,9 +8,11 @@
     <title><%= serverName %> – Tally Servers</title>
     <link href="css/fonts.css" rel="stylesheet" type="text/css">
     <script type="text/javascript" src="js/jQuery.js"></script>
-    <script>
+    <script type="text/javascript">
       let servers = ['<%= host %>'];
+      let productionID = <%= prodID %>;
     </script>
+    <script type="text/javascript" src="js/commonWS.js"></script>
     <script type="text/javascript" src="js/servers.js"></script>
     <link rel="stylesheet" href="css/servers.css">
   </head>
@@ -26,6 +28,7 @@
       <button id="new" class="headerButton green">Search</button>
 
       <button class="n_configDev headerButton blue">Show Devices</button>
+      <button class="n_configProd headerButton blue">Edit Productions</button>
       <button class="n_configInpt headerButton purple">Virtual Mixer</button>
     </header>
 

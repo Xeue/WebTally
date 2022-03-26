@@ -9,10 +9,11 @@
     <link href="css/fonts.css" rel="stylesheet" type="text/css">
     <script type="text/javascript" src="js/jQuery.js"></script>
     <script type="text/javascript">
-      let CamNum = 0;
-      let client = false;
       let servers = ['<%= host %>'];
+      let productionID = <%= prodID %>;
     </script>
+    <script type="text/javascript" src="js/commonWS.js"></script>
+    <script type="text/javascript" src="js/mixer.js"></script>
     <link rel="stylesheet" href="css/tally.css">
   </head>
   <body>
@@ -48,6 +49,5 @@
       <!--<button id="c_cut">Cut</button>
       <button id="c_auto" class="c_butt">Auto</button>-->
     </main>
-    <script type="text/javascript" src="js/tally.js"></script>
   </body>
 </html>

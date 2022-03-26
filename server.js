@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url);
 const reader = require("readline-sync");
 
 const args = process.argv.slice(2);
-const version = "4.2";
+const version = "4.3";
 const type = "Server";
 const loadTime = new Date().getTime();
 
@@ -110,7 +110,7 @@ function startServer() {
             break;
           case "disconnect":
             log(`${r}${pObj.data.ID}${reset} Connection closed`, "D");
-            state.clients.remove(pObj.data.ID);
+            state.clients.disconnect(pObj.data.ID);
             sendConfigs(msgObj, socket);
             sendServers(msgObj);
             break;
@@ -190,7 +190,7 @@ function startServer() {
         if (socket.type == "Server") {
           log(`${r}${socket.address}${reset} Inbound connection closed`, "W");
         } else {
-          state.clients.remove(oldId);
+          state.clients.disconnect(oldId);
         }
         let packet = makePacket({"command":"disconnect","data":{"ID":oldId}});
         sendServers(packet);
@@ -226,745 +226,6 @@ function startLoops() {
 
 }
 
-function setUpStates() {
-  let dir = `${configLocation}/states`;
-  let fileNameTally = dir+"/tallyState.json";
-  let fileNameServers = dir+"/serversState.json";
-  let fileNameClients = dir+"/clientsState.json";
-  let fileNameMixers = dir+"/mixerState.json";
-  let fileNameProperties = dir+"/server.properties";
-
-  // State functions defined here
-  let state = {
-    "tally":{
-      "data":{},
-      update(busses, source = "default") {
-        let savedBusses = this.data[source];
-        if (typeof savedBusses == "undefined") {
-          savedBusses = {};
-        }
-
-        for (let busName in busses) {
-          if (busses.hasOwnProperty(busName)) {
-            let bus = busses[busName];
-            for (var camNum in bus) {
-              if (bus.hasOwnProperty(camNum)) {
-                let cam = bus[camNum];
-                if (typeof savedBusses[busName] == "undefined") {
-                  this.newBus(busName, source);
-                }
-
-                let savedBus = savedBusses[busName];
-
-                if (typeof savedBus[camNum] == "undefined") {
-                  savedBus[camNum] = {"prog":false,"prev":false};
-                }
-
-                if (typeof cam.prev != "undefined") {
-                  savedBus[camNum].prev = cam.prev;
-                }
-                if (typeof cam.prog != "undefined") {
-                  savedBus[camNum].prog = cam.prog;
-                }
-
-              }
-            }
-          }
-        }
-
-        if (dataBase === false) {
-          let data = JSON.stringify(this.data);
-          fs.writeFile(fileNameTally, data, err => {
-            if (err) {
-              log("Could not save tally state to file, permissions?", "W");
-            }
-          });
-        } else {
-          log("Not implemented yet - database connection", "W");
-        }
-
-      },
-      newSoruce(source) {
-        this.data[source] = {
-          "busses":{
-            "main":{}
-          }
-        };
-      },
-      newBus(busName, source = "default") {
-        if (typeof this.data[source] == "undefined") {
-          this.newSoruce(source);
-        }
-        this.data[source][busName] = {};
-      },
-      updateClients(socket = null) {
-        setTimeout(function() {
-          for (var source in state.tally.data) {
-            if (state.tally.data.hasOwnProperty(source)) {
-              let payload = {};
-              payload.busses = {};
-              payload.busses = state.tally.data[source];
-              payload.command = "tally";
-              payload.source = source;
-              let packet = makePacket(payload);
-              if (socket == null) {
-                sendClients(packet);
-              } else {
-                socket.send(JSON.stringify(packet));
-              }
-            }
-          }
-        },100);
-      },
-      updateServer(socket) {
-        setTimeout(function() {
-          for (var source in this.data) {
-            if (this.data.hasOwnProperty(source)) {
-              let payload = {};
-              payload.busses = {};
-              payload.busses = this.data[source];
-              payload.command = "tally";
-              payload.source = source;
-              let packet = makePacket(payload);
-              socket.send(JSON.stringify(packet));
-            }
-          }
-        },100);
-      },
-      clean() {
-        log("Clearing tally states");
-        this.data = {};
-        fs.unlink(fileNameTally, (err) => {
-          if (err) {
-            log("Could not remove tally states file, it either didn't exists or permissions?", "W");
-          } else {
-            log("Cleared tally states");
-          }
-        });
-      }
-    },
-    "servers":{
-      "data":{},
-      add(url, header, name) {
-        if (!this.data.hasOwnProperty(url) && url !== host) {
-          log("Adding new address: "+url, "D");
-          this.data[url] = {
-            "socket":null,
-            "active":true,
-            "connected":false,
-            "attempts":0,
-            "version":null,
-            "ID":null,
-            "Name":`Webtally v4 server`
-          };
-          if (typeof header !== "undefined") {
-            this.data[url].version = header.version;
-            this.data[url].ID = header.fromID;
-            if (typeof name !== "undefined") {
-              this.data[address].Name = name;
-            } else {
-              this.data[address].Name = `Webtally v${header.version} server`;
-            }
-          }
-          connectToOtherServers();
-          if (coreServer) {
-            sendServerListToClients();
-          }
-        } else if (url !== host) {
-          log("Address already registered", "D");
-          if (typeof this.data[url].active === false) {
-            this.data[url].active = true;
-            connectToOtherServers();
-          }
-        }
-
-        this.save();
-      },
-      update(address, header, name) {
-        if (this.data.hasOwnProperty(address) && address !== host) {
-          log("Updating server details for: "+address, "D");
-          this.data[address].version = header.version;
-          this.data[address].ID = header.fromID;
-          if (typeof name !== "undefined") {
-            this.data[address].Name = name;
-          } else {
-            this.data[address].Name = `Webtally v${header.version} server`;
-          }
-          let payload = {};
-          payload.command = "server";
-          payload.servers = this.getDetails(address, true);
-          sendAdmins(makePacket(payload));
-          sendServerListToClients();
-        } else {
-          log("Address not registered, adding: "+address, "D");
-          this.add(address, header, name);
-        }
-
-        this.save();
-      },
-      remove(url) {
-        if (this.data.hasOwnProperty(url)) {
-          log(`Removing address and closing outbound connection to: ${y}${url}${reset}`, "D");
-          try {
-            this.data[url].socket.close();
-          } catch (e) {
-            log("Server connection already closed","W");
-          }
-          delete this.data[url];
-        }
-
-        coreServer.clients.forEach(function each(client) {
-          if (client.address == url && client.readyState === WebSocket.OPEN) {
-            client.terminate();
-          }
-        });
-
-        let payload = {};
-        payload.command = "server";
-        payload.servers = this.getDetails(url, true);
-        sendAdmins(makePacket(payload));
-        this.save();
-      },
-      getURLs(print = false) {
-        let serverDataList = [];
-        let serverData = this.data;
-        for (var server in serverData) {
-          if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function' && serverData[server].connected == true) {
-            serverDataList.push(server);
-          }
-          if (print) {
-            log(`${server} - Connected: ${serverData[server].connected} Active: ${serverData[server].active}`,"S");
-          }
-        }
-        return serverDataList;
-      },
-      getStatus(print = false) {
-        let serverDataTrimmed = {};
-        let serverData = this.data;
-        for (var server in serverData) {
-          if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function') {
-            serverDataTrimmed[server] = {};
-            serverDataTrimmed[server].active = serverData[server].active;
-            serverDataTrimmed[server].connected = serverData[server].connected;
-            if (print) {
-              log(`${server} - Connected: ${serverData[server].connected} Active: ${serverData[server].active}`,"S");
-            }
-          }
-        }
-        return serverDataTrimmed;
-      },
-      getDetails(server = "ALL", print = false) {
-        let details = {};
-        if (server == "ALL") {
-          for (var data in this.data) {
-            if (this.data.hasOwnProperty(data)) {
-              details[data] = {};
-              details[data].socket = "SOCKET OBJECT";
-              details[data].active = this.data[data].active;
-              details[data].connected = this.data[data].connected;
-              details[data].attempts = this.data[data].attempts;
-              details[data].version = this.data[data].version;
-              details[data].ID = this.data[data].ID;
-              details[data].Name = this.data[data].Name;
-            }
-          }
-
-          for (var detail in details) {
-            if (details.hasOwnProperty(detail)) {
-              if (details[detail].connected) {
-                details[detail].socket = "SOCKET OBJECT";
-              } else {
-                details[detail].socket = null;
-              }
-            }
-          }
-        } else if (server == host) {
-          details[server] = this.getThisServer();
-        } else {
-          if (typeof this.data[server] !== "undefined") {
-            details[server] = {};
-            details[server].socket = "SOCKET OBJECT";
-            details[server].active = this.data[server].active;
-            details[server].connected = this.data[server].connected;
-            details[server].attempts = this.data[server].attempts;
-            details[server].version = this.data[server].version;
-            details[server].ID = this.data[server].ID;
-            details[server].Name = this.data[server].Name;
-          }
-        }
-        if (print === true) {
-          logObj("Server details", details, "A");
-        } else if (print == "S") {
-          logObj("Server details", details, "S");
-        }
-        return details;
-      },
-      getThisServer() {
-        let thisServer = {
-          "socket": "SOCKET OBJECT",
-          "active":true,
-          "connected":true,
-          "attempts":0,
-          "version":version,
-          "ID":myID,
-          "Name":serverName
-        };
-        return thisServer;
-      },
-      save() {
-        if (dataBase === false) {
-          let data = JSON.stringify(this.getDetails("ALL", true));
-          fs.writeFile(fileNameServers, data, err => {
-            if (err) {
-              log("Could not save servers state to file, permissions?", "W");
-            }
-          });
-        } else {
-          log("Not implemented yet - database connection", "W");
-        }
-      },
-      clean() {
-        log("Clearing server states");
-        let servers = this.getURLs();
-        for (var i = 0; i < servers.length; i++) {
-          this.remove(servers[i]);
-        }
-        this.data = {};
-        fs.unlink(fileNameServers, (err) => {
-          if (err) {
-            log("Could not remove server states file, it either didn't exists or permissions?", "W");
-          } else {
-            log("Cleared server states");
-          }
-        });
-      }
-    },
-    "clients":{
-      "data":{},
-      add(msgObj, socket) {
-        let hObj = msgObj.header;
-        let pObj = msgObj.payload;
-        let clientsData = this.data;
-        let clientData;
-        if (hObj.type != "Server") {
-          if (hObj.fromID == socket.ID) {
-            clientsData[socket.ID] = {};
-            clientData = clientsData[socket.ID];
-            clientData.camera = socket.camera;
-            clientData.connected = socket.connected;
-            clientData.type = socket.type;
-            clientData.version = socket.version;
-            clientData.local = true;
-            clientData.pingStatus = socket.pingStatus;
-            clientData.socket = socket;
-          } else {
-            clientsData[hObj.fromID] = {};
-            clientData = clientsData[hObj.fromID];
-            clientData.camera = pObj.camera;
-            clientData.connected = hObj.active;
-            clientData.type = hObj.type;
-            clientData.version = hObj.version;
-            clientData.local = false;
-          }
-        }
-        this.save();
-      },
-      addAll(clients) {
-        let clientsData = this.data;
-        for (var client in clients) {
-          if (clients.hasOwnProperty(client) && !clientsData.hasOwnProperty(client)) {
-            clientsData[client] = {};
-            clientsData[client].camera = clients[client].camera;
-            clientsData[client].connected = clients[client].active;
-            clientsData[client].type = clients[client].type;
-            clientsData[client].version = clients[client].version;
-            clientsData[client].local = false;
-          }
-        }
-      },
-      update(msgObj, socket) {
-        let hObj = msgObj.header;
-        let pObj = msgObj.payload;
-        let clientsData = this.data;
-        let clientData;
-        if (hObj.type != "Server") {
-          if (typeof clientsData[hObj.fromID] == "undefined") {
-            this.add(msgObj, socket);
-          } else if (hObj.fromID == socket.ID) {
-            clientsData[socket.ID] = {};
-            clientData = clientsData[socket.ID];
-            clientData.camera = socket.camera;
-            clientData.connected = socket.connected;
-            clientData.type = socket.type;
-            clientData.version = socket.version;
-            clientData.local = true;
-            clientData.pingStatus = socket.pingStatus;
-            clientData.socket = socket;
-          } else {
-            clientsData[hObj.fromID] = {};
-            clientData = clientsData[hObj.fromID];
-            clientData.camera = pObj.camera;
-            clientData.connected = hObj.active;
-            clientData.type = hObj.type;
-            clientData.version = hObj.version;
-            clientData.local = false;
-          }
-        }
-      },
-      remove(socket) {
-        let clientsData = this.data;
-        if (typeof socket == "string") {
-          if (typeof clientsData[socket] !== "undefined" && clientsData[socket].local == true) {
-            clientsData[socket].socket.terminate();
-            delete clientsData[socket];
-          } else {
-            delete clientsData[socket];
-          }
-        } else {
-          if (socket.type != "Server" && socket.type != "Config" && socket.type != "Admin") {
-            if (typeof clientsData[socket.ID] !== "undefined" && clientsData[socket.ID].local == true) {
-              delete clientsData[socket.ID];
-              socket.terminate();
-            } else {
-              delete clientsData[socket.ID];
-            }
-          }
-        }
-        this.save();
-      },
-      getDetails(socket = "ALL", print = false) {
-        let clientsData = this.data;
-        let details = {};
-        if (socket == "ALL") {
-          for (var client in clientsData) {
-            if (clientsData.hasOwnProperty(client)) {
-              details[client] = {};
-              details[client].camera = clientsData[client].camera;
-              details[client].connected = clientsData[client].connected;
-              details[client].type = clientsData[client].type;
-              details[client].version = clientsData[client].version;
-              details[client].local = clientsData[client].local;
-              if (clientsData[client].local == true) {
-                details[client].pingStatus = clientsData[client].pingStatus;
-                details[client].socket = "SOCKET OBJECT";
-              }
-            }
-          }
-          if (print === true) {
-            log("Clients details", details, "A");
-          } else if (print == "S") {
-            logObj("Clients details", details, "S");
-          }
-        } else if (typeof clientsData[socket.ID] !== "undefined") {
-          details[socket.ID].camera = clientsData[socket.ID].camera;
-          details[socket.ID].connected = clientsData[socket.ID].connected;
-          details[socket.ID].type = clientsData[socket.ID].type;
-          details[socket.ID].version = clientsData[socket.ID].version;
-          if (clientData.local == true) {
-            details[socket.ID].pingStatus = clientsData[socket.ID].pingStatus;
-            details[socket.ID].socket = "SOCKET OBJECT";
-          }
-          if (print) {
-            log("Clients details: "+JSON.stringify(details, null, 4), "A");
-          }
-        } else {
-          details = false;
-        }
-        return details;
-      },
-      save() {
-        if (dataBase === false) {
-          let data = JSON.stringify(this.getDetails("ALL"));
-          fs.writeFile(fileNameClients, data, err => {
-            if (err) {
-              log("Could not save clients state to file, permissions?", "W");
-            }
-          });
-        } else {
-          log("Not implemented yet - database connection", "W");
-        }
-      },
-      clean() {
-        log("Clearing clients states");
-        this.data = {};
-        fs.unlink(fileNameClients, (err) => {
-          if (err) {
-            log("Could not remove client states file, it either didn't exists or permissions?", "W");
-          } else {
-            log("Cleared clients states");
-          }
-        });
-      }
-    },
-    "mixer":{
-      "data":{},
-      add(msgObj, socket) {
-        let hObj = msgObj.header;
-        let pObj = msgObj.payload;
-        let mixersData = this.data;
-        let mixerData;
-        if (hObj.type != "Server") {
-          if (hObj.fromID == socket.ID) {
-            mixersData[socket.ID] = {};
-            mixerData = mixersData[socket.ID];
-            mixerData.camera = socket.camera;
-            mixerData.connected = socket.connected;
-            mixerData.type = socket.type;
-            mixerData.version = socket.version;
-            mixerData.local = true;
-            mixerData.pingStatus = socket.pingStatus;
-            mixerData.socket = socket;
-          } else {
-            mixersData[hObj.fromID] = {};
-            mixerData = mixersData[hObj.fromID];
-            mixerData.camera = pObj.camera;
-            mixerData.connected = hObj.active;
-            mixerData.type = hObj.type;
-            mixerData.version = hObj.version;
-            mixerData.local = false;
-          }
-        }
-        this.save();
-      },
-      addAll(mixers) {
-        let mixersData = this.data;
-        for (var mixer in mixers) {
-          if (mixers.hasOwnProperty(mixer) && !mixersData.hasOwnProperty(mixer)) {
-            mixersData[mixer] = {};
-            mixersData[mixer].camera = mixers[mixer].camera;
-            mixersData[mixer].connected = mixers[mixer].active;
-            mixersData[mixer].type = mixers[mixer].type;
-            mixersData[mixer].version = mixers[mixer].version;
-            mixersData[mixer].local = false;
-          }
-        }
-      },
-      update(msgObj, socket) {
-        let hObj = msgObj.header;
-        let pObj = msgObj.payload;
-        let mixersData = this.data;
-        let mixerData;
-        if (hObj.type != "Server") {
-          if (typeof mixersData[hObj.fromID] == "undefined") {
-            this.add(msgObj, socket);
-          } else if (hObj.fromID == socket.ID) {
-            mixersData[socket.ID] = {};
-            mixerData = mixersData[socket.ID];
-            mixerData.camera = socket.camera;
-            mixerData.connected = socket.connected;
-            mixerData.type = socket.type;
-            mixerData.version = socket.version;
-            mixerData.local = true;
-            mixerData.pingStatus = socket.pingStatus;
-            mixerData.socket = socket;
-          } else {
-            mixersData[hObj.fromID] = {};
-            mixerData = mixersData[hObj.fromID];
-            mixerData.camera = pObj.camera;
-            mixerData.connected = hObj.active;
-            mixerData.type = hObj.type;
-            mixerData.version = hObj.version;
-            mixerData.local = false;
-          }
-        }
-      },
-      remove(socket) {
-        let mixersData = this.data;
-        if (typeof socket == "string") {
-          if (typeof mixersData[socket] !== "undefined" && mixersData[socket].local == true) {
-            mixersData[socket].socket.terminate();
-            delete mixersData[socket];
-          } else {
-            delete mixersData[socket];
-          }
-        } else {
-          if (socket.type != "Server" && socket.type != "Config" && socket.type != "Admin") {
-            if (typeof mixersData[socket.ID] !== "undefined" && mixersData[socket.ID].local == true) {
-              delete mixersData[socket.ID];
-              socket.terminate();
-            } else {
-              delete mixersData[socket.ID];
-            }
-          }
-        }
-        this.save();
-      },
-      getDetails(socket = "ALL", print = false) {
-        let mixersData = this.data;
-        let details = {};
-        if (socket = "ALL") {
-          for (var mixer in mixersData) {
-            if (mixersData.hasOwnProperty(mixer)) {
-              details[mixer] = {};
-              details[mixer].camera = mixersData[mixer].camera;
-              details[mixer].connected = mixersData[mixer].connected;
-              details[mixer].type = mixersData[mixer].type;
-              details[mixer].version = mixersData[mixer].version;
-              details[mixer].local = mixersData[mixer].local;
-              if (mixersData[mixer].local == true) {
-                details[mixer].pingStatus = mixersData[mixer].pingStatus;
-                details[mixer].socket = "SOCKET OBJECT";
-              }
-            }
-          }
-          if (print === true) {
-            log("mixers details", details, "A");
-          } else if (print == "S") {
-            logObj("mixers details", details, "S");
-          }
-        } else if (typeof mixersData[socket.ID] !== "undefined") {
-          details[socket.ID].camera = mixersData[socket.ID].camera;
-          details[socket.ID].connected = mixersData[socket.ID].connected;
-          details[socket.ID].type = mixersData[socket.ID].type;
-          details[socket.ID].version = mixersData[socket.ID].version;
-          if (mixerData.local == true) {
-            details[socket.ID].pingStatus = mixersData[socket.ID].pingStatus;
-            details[socket.ID].socket = "SOCKET OBJECT";
-          }
-          if (print) {
-            log("mixers details: "+JSON.stringify(details, null, 4), "A");
-          }
-        } else {
-          details = false;
-        }
-        return details;
-      },
-      save() {
-        if (dataBase === false) {
-          let data = JSON.stringify(this.getDetails("ALL"));
-          fs.writeFile(fileNameMixers, data, err => {
-            if (err) {
-              log("Could not save mixers state to file, permissions?", "W");
-            }
-          });
-        } else {
-          log("Not implemented yet - database connection", "W");
-        }
-      },
-      clean() {
-        log("Clearing mixers states");
-        this.data = {};
-        fs.unlink(fileNameMixers, (err) => {
-          if (err) {
-            log("Could not remove mixer states file, it either didn't exists or permissions?", "W");
-          } else {
-            log("Cleared mixers states");
-          }
-        });
-      }
-    }
-  };
-
-  if (!fs.existsSync(dir)){
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  fs.readFile(fileNameTally, function(err, data) {
-    if (typeof data !== "undefined") {
-      try {
-        state.tally.data = JSON.parse(data);
-      } catch (e) {
-        log("Could not parse tally state data", "W");
-      }
-    } else {
-      state.tally.data = {"default":{"main":{}}};
-    }
-    if (err) {
-      log("Could not read tally state from file, either invalid permissions or it doesn't exist yet", "W");
-    }
-  });
-  fs.readFile(fileNameServers, function(err, data) {
-    if (typeof data !== "undefined") {
-      let serverData = state.servers.data;
-      try {
-        serverData = JSON.parse(data);
-        for (var server in serverData) {
-          if (serverData.hasOwnProperty(server)) {
-            serverData[server].socket = null;
-            serverData[server].connected = false;
-          }
-        }
-      } catch (e) {
-        log("Could not parse server state data", "W");
-      }
-    }
-    if (err) {
-      log("Could not read servers state from file, either invalid permissions or it doesn't exist yet", "W");
-    }
-  });
-  fs.readFile(fileNameClients, function(err, data) {
-    if (typeof data !== "undefined") {
-      let clientData = state.clients.data;
-      try {
-        clientData = JSON.parse(data);
-        for (var client in clientData) {
-          if (clientData.hasOwnProperty(client)) {
-            //clientData[client].socket = null;
-            //clientData[client].connected = false;
-          }
-        }
-      } catch (e) {
-        log("Could not parse client state data", "W");
-      }
-    }
-    if (err) {
-      log("Could not read client state from file, either invalid permissions or it doesn't exist yet", "W");
-    }
-  });
-  fs.readFile(fileNameMixers, function(err, data) {
-    if (typeof data !== "undefined") {
-      let mixerData = state.mixer.data;
-      try {
-        mixerData = JSON.parse(data);
-        for (var mixer in mixerData) {
-          if (mixerData.hasOwnProperty(mixer)) {
-            //mixerData[mixer].socket = null;
-            //mixerData[mixer].connected = false;
-          }
-        }
-      } catch (e) {
-        log("Could not parse mixer state data", "W");
-      }
-    }
-    if (err) {
-      log("Could not read mixer state from file, either invalid permissions or it doesn't exist yet", "W");
-    }
-  });
-  fs.readFile(fileNameProperties, function(err, data) {
-    if (typeof data !== "undefined") {
-      let properties;
-      try {
-        properties = JSON.parse(data);
-        myID = properties.myID;
-        log(`Server ID is: ${y}${myID}${w}`);
-      } catch (e) {
-        log("Could not parse server properties", "W");
-        properties = {
-          "myID": myID
-        };
-        fs.writeFile(fileNameProperties, JSON.stringify(properties), err => {
-          if (err) {
-            log("Could not save server properties to file, permissions?", "W");
-          }
-        });
-      }
-    }
-    if (err) {
-      log("Could not read server properties from file, either invalid permissions or it doesn't exist yet", "W");
-      let properties = {
-        "myID": myID
-      };
-      fs.writeFile(fileNameProperties, JSON.stringify(properties), err => {
-        if (err) {
-          log("Could not save server properties to file, permissions?", "W");
-        }
-      });
-    }
-  });
-
-  return state;
-}
-
 function doPing() {
   if (printPings !== false) {
     log("Doing ping", "A");
@@ -993,6 +254,938 @@ function doPing() {
   }
 }
 
+function setUpStates() {
+  let state = {};
+
+  let dir = `${configLocation}/states`;
+  state.fileNameTally = dir+"/tallyState.json";
+  state.fileNameServers = dir+"/serversState.json";
+  state.fileNameClients = dir+"/clientsState.json";
+  state.fileNameMixers = dir+"/mixerState.json";
+  state.fileNameBuss = dir+"/busState.json";
+  state.fileNameProperties = dir+"/server.properties";
+
+  // State functions defined here
+  stateTally(state);
+  stateServers(state);
+  stateClients(state);
+  stateMixer(state);
+  stateBusses(state);
+
+  if (!fs.existsSync(dir)){
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fs.readFile(state.fileNameTally, function(err, data) {
+    if (typeof data !== "undefined") {
+      try {
+        state.tally.data = JSON.parse(data);
+      } catch (e) {
+        log("Could not parse tally state data", "W");
+      }
+    } else {
+      state.tally.data = {"default":{"main":{}}};
+    }
+    if (err) {
+      log("Could not read tally state from file, either invalid permissions or it doesn't exist yet", "W");
+    }
+  });
+  fs.readFile(state.fileNameServers, function(err, data) {
+    if (typeof data !== "undefined") {
+      let serverData = state.servers.data;
+      try {
+        serverData = JSON.parse(data);
+        for (var server in serverData) {
+          if (serverData.hasOwnProperty(server)) {
+            serverData[server].socket = null;
+            serverData[server].connected = false;
+          }
+        }
+      } catch (e) {
+        log("Could not parse server state data", "W");
+      }
+    }
+    if (err) {
+      log("Could not read servers state from file, either invalid permissions or it doesn't exist yet", "W");
+    }
+  });
+  fs.readFile(state.fileNameClients, function(err, data) {
+    if (typeof data !== "undefined") {
+      let clientData = state.clients.data;
+      try {
+        clientData = JSON.parse(data);
+        for (var client in clientData) {
+          if (clientData.hasOwnProperty(client)) {
+            //clientData[client].socket = null;
+            //clientData[client].connected = false;
+          }
+        }
+      } catch (e) {
+        log("Could not parse client state data", "W");
+      }
+    }
+    if (err) {
+      log("Could not read client state from file, either invalid permissions or it doesn't exist yet", "W");
+    }
+  });
+  fs.readFile(state.fileNameMixers, function(err, data) {
+    if (typeof data !== "undefined") {
+      let mixerData = state.mixer.data;
+      try {
+        mixerData = JSON.parse(data);
+        for (var mixer in mixerData) {
+          if (mixerData.hasOwnProperty(mixer)) {
+            //mixerData[mixer].socket = null;
+            //mixerData[mixer].connected = false;
+          }
+        }
+      } catch (e) {
+        log("Could not parse mixer state data", "W");
+      }
+    }
+    if (err) {
+      log("Could not read mixer state from file, either invalid permissions or it doesn't exist yet", "W");
+    }
+  });
+  fs.readFile(state.fileNameBuss, function(err, data) {
+    if (typeof data !== "undefined") {
+      let busData = state.bus.data;
+      try {
+        busData = JSON.parse(data);
+        for (var bus in busData) {
+          if (busrData.hasOwnProperty(bus)) {
+            //mixerData[mixer].socket = null;
+            //mixerData[mixer].connected = false;
+          }
+        }
+      } catch (e) {
+        log("Could not parse bus state data", "W");
+      }
+    }
+    if (err) {
+      log("Could not read bus state from file, either invalid permissions or it doesn't exist yet", "W");
+    }
+  });
+  fs.readFile(state.fileNameProperties, function(err, data) {
+    if (typeof data !== "undefined") {
+      let properties;
+      try {
+        properties = JSON.parse(data);
+        myID = properties.myID;
+        log(`Server ID is: ${y}${myID}${w}`);
+      } catch (e) {
+        log("Could not parse server properties", "W");
+        properties = {
+          "myID": myID
+        };
+        fs.writeFile(state.fileNameProperties, JSON.stringify(properties), err => {
+          if (err) {
+            log("Could not save server properties to file, permissions?", "W");
+          }
+        });
+      }
+    }
+    if (err) {
+      log("Could not read server properties from file, either invalid permissions or it doesn't exist yet", "W");
+      let properties = {
+        "myID": myID
+      };
+      fs.writeFile(state.fileNameProperties, JSON.stringify(properties), err => {
+        if (err) {
+          log("Could not save server properties to file, permissions?", "W");
+        }
+      });
+    }
+  });
+
+  return state;
+}
+
+function stateTally(state) {
+  state["tally"] = {
+    "data":{},
+    update(busses, source = "default") {
+      let savedBusses = this.data[source];
+      if (typeof savedBusses == "undefined") {
+        savedBusses = {};
+      }
+
+      for (let busName in busses) {
+        if (busses.hasOwnProperty(busName)) {
+          let bus = busses[busName];
+          for (var camNum in bus) {
+            if (bus.hasOwnProperty(camNum)) {
+              let cam = bus[camNum];
+              if (typeof savedBusses[busName] == "undefined") {
+                this.newBus(busName, source);
+              }
+
+              let savedBus = savedBusses[busName];
+
+              if (typeof savedBus[camNum] == "undefined") {
+                savedBus[camNum] = {"prog":false,"prev":false};
+              }
+
+              if (typeof cam.prev != "undefined") {
+                savedBus[camNum].prev = cam.prev;
+              }
+              if (typeof cam.prog != "undefined") {
+                savedBus[camNum].prog = cam.prog;
+              }
+
+            }
+          }
+        }
+      }
+
+      if (dataBase === false) {
+        let data = JSON.stringify(this.data);
+        fs.writeFile(state.fileNameTally, data, err => {
+          if (err) {
+            log("Could not save tally state to file, permissions?", "W");
+          }
+        });
+      } else {
+        log("Not implemented yet - database connection", "W");
+      }
+
+    },
+    newSoruce(source) {
+      this.data[source] = {
+        "busses":{
+          "main":{}
+        }
+      };
+    },
+    newBus(busName, source = "default") {
+      if (typeof this.data[source] == "undefined") {
+        this.newSoruce(source);
+      }
+      this.data[source][busName] = {};
+    },
+    updateClients(socket = null) {
+      setTimeout(function() {
+        for (var source in state.tally.data) {
+          if (state.tally.data.hasOwnProperty(source)) {
+            let payload = {};
+            payload.busses = {};
+            payload.busses = state.tally.data[source];
+            payload.command = "tally";
+            payload.source = source;
+            let packet = makePacket(payload);
+            if (socket == null) {
+              sendClients(packet);
+            } else {
+              socket.send(JSON.stringify(packet));
+            }
+          }
+        }
+      },100);
+    },
+    updateServer(socket) {
+      setTimeout(function() {
+        for (var source in this.data) {
+          if (this.data.hasOwnProperty(source)) {
+            let payload = {};
+            payload.busses = {};
+            payload.busses = this.data[source];
+            payload.command = "tally";
+            payload.source = source;
+            let packet = makePacket(payload);
+            socket.send(JSON.stringify(packet));
+          }
+        }
+      },100);
+    },
+    clean() {
+      log("Clearing tally states");
+      this.data = {};
+      fs.unlink(state.fileNameTally, (err) => {
+        if (err) {
+          log("Could not remove tally states file, it either didn't exists or permissions?", "W");
+        } else {
+          log("Cleared tally states");
+        }
+      });
+    }
+  };
+}
+function stateServers(state) {
+  state["servers"] = {
+    "data":{},
+    add(url, header, name) {
+      if (!this.data.hasOwnProperty(url) && url !== host) {
+        log("Adding new address: "+url, "D");
+        this.data[url] = {
+          "socket":null,
+          "active":true,
+          "connected":false,
+          "attempts":0,
+          "version":null,
+          "ID":null,
+          "Name":`Webtally v4 server`
+        };
+        if (typeof header !== "undefined") {
+          this.data[url].version = header.version;
+          this.data[url].ID = header.fromID;
+          if (typeof name !== "undefined") {
+            this.data[address].Name = name;
+          } else {
+            this.data[address].Name = `Webtally v${header.version} server`;
+          }
+        }
+        connectToOtherServers();
+        if (coreServer) {
+          sendServerListToClients();
+        }
+      } else if (url !== host) {
+        log("Address already registered", "D");
+        if (typeof this.data[url].active === false) {
+          this.data[url].active = true;
+          connectToOtherServers();
+        }
+      }
+
+      this.save();
+    },
+    update(address, header, name) {
+      if (this.data.hasOwnProperty(address) && address !== host) {
+        log("Updating server details for: "+address, "D");
+        this.data[address].version = header.version;
+        this.data[address].ID = header.fromID;
+        if (typeof name !== "undefined") {
+          this.data[address].Name = name;
+        } else {
+          this.data[address].Name = `Webtally v${header.version} server`;
+        }
+        let payload = {};
+        payload.command = "server";
+        payload.servers = this.getDetails(address, true);
+        sendAdmins(makePacket(payload));
+        sendServerListToClients();
+      } else {
+        log("Address not registered, adding: "+address, "D");
+        this.add(address, header, name);
+      }
+
+      this.save();
+    },
+    remove(url) {
+      if (this.data.hasOwnProperty(url)) {
+        log(`Removing address and closing outbound connection to: ${y}${url}${reset}`, "D");
+        try {
+          this.data[url].socket.close();
+        } catch (e) {
+          log("Server connection already closed","W");
+        }
+        delete this.data[url];
+      }
+
+      coreServer.clients.forEach(function each(client) {
+        if (client.address == url && client.readyState === WebSocket.OPEN) {
+          client.terminate();
+        }
+      });
+
+      let payload = {};
+      payload.command = "server";
+      payload.servers = this.getDetails(url, true);
+      sendAdmins(makePacket(payload));
+      this.save();
+    },
+    getURLs(print = false) {
+      let serverDataList = [];
+      let serverData = this.data;
+      for (var server in serverData) {
+        if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function' && serverData[server].connected == true) {
+          serverDataList.push(server);
+        }
+        if (print) {
+          log(`${server} - Connected: ${serverData[server].connected} Active: ${serverData[server].active}`,"S");
+        }
+      }
+      return serverDataList;
+    },
+    getStatus(print = false) {
+      let serverDataTrimmed = {};
+      let serverData = this.data;
+      for (var server in serverData) {
+        if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function') {
+          serverDataTrimmed[server] = {};
+          serverDataTrimmed[server].active = serverData[server].active;
+          serverDataTrimmed[server].connected = serverData[server].connected;
+          if (print) {
+            log(`${server} - Connected: ${serverData[server].connected} Active: ${serverData[server].active}`,"S");
+          }
+        }
+      }
+      return serverDataTrimmed;
+    },
+    getDetails(server = "ALL", print = false) {
+      let details = {};
+      if (server == "ALL") {
+        for (var data in this.data) {
+          if (this.data.hasOwnProperty(data)) {
+            details[data] = {};
+            details[data].socket = "SOCKET OBJECT";
+            details[data].active = this.data[data].active;
+            details[data].connected = this.data[data].connected;
+            details[data].attempts = this.data[data].attempts;
+            details[data].version = this.data[data].version;
+            details[data].ID = this.data[data].ID;
+            details[data].Name = this.data[data].Name;
+          }
+        }
+
+        for (var detail in details) {
+          if (details.hasOwnProperty(detail)) {
+            if (details[detail].connected) {
+              details[detail].socket = "SOCKET OBJECT";
+            } else {
+              details[detail].socket = null;
+            }
+          }
+        }
+      } else if (server == host) {
+        details[server] = this.getThisServer();
+      } else {
+        if (typeof this.data[server] !== "undefined") {
+          details[server] = {};
+          details[server].socket = "SOCKET OBJECT";
+          details[server].active = this.data[server].active;
+          details[server].connected = this.data[server].connected;
+          details[server].attempts = this.data[server].attempts;
+          details[server].version = this.data[server].version;
+          details[server].ID = this.data[server].ID;
+          details[server].Name = this.data[server].Name;
+        }
+      }
+      if (print === true) {
+        logObj("Server details", details, "A");
+      } else if (print == "S") {
+        logObj("Server details", details, "S");
+      }
+      return details;
+    },
+    getThisServer() {
+      let thisServer = {
+        "socket": "SOCKET OBJECT",
+        "active":true,
+        "connected":true,
+        "attempts":0,
+        "version":version,
+        "ID":myID,
+        "Name":serverName
+      };
+      return thisServer;
+    },
+    save() {
+      if (dataBase === false) {
+        let data = JSON.stringify(this.getDetails("ALL", true));
+        fs.writeFile(state.fileNameServers, data, err => {
+          if (err) {
+            log("Could not save servers state to file, permissions?", "W");
+          }
+        });
+      } else {
+        log("Not implemented yet - database connection", "W");
+      }
+    },
+    clean() {
+      log("Clearing server states");
+      let servers = this.getURLs();
+      for (var i = 0; i < servers.length; i++) {
+        this.remove(servers[i]);
+      }
+      this.data = {};
+      fs.unlink(state.fileNameServers, (err) => {
+        if (err) {
+          log("Could not remove server states file, it either didn't exists or permissions?", "W");
+        } else {
+          log("Cleared server states");
+        }
+      });
+    }
+  };
+}
+function stateClients(state) {
+  state["clients"] = {
+    "data":{},
+    add(msgObj, socket) {
+      let hObj = msgObj.header;
+      let pObj = msgObj.payload;
+      let clientsData = this.data;
+      let clientData;
+      if (hObj.type != "Server") {
+        if (hObj.fromID == socket.ID) {
+          clientsData[socket.ID] = {};
+          clientData = clientsData[socket.ID];
+          clientData.camera = socket.camera;
+          clientData.connected = socket.connected;
+          clientData.prodID = socket.prodID;
+          clientData.type = socket.type;
+          clientData.version = socket.version;
+          clientData.local = true;
+          clientData.pingStatus = socket.pingStatus;
+          clientData.socket = socket;
+        } else {
+          clientsData[hObj.fromID] = {};
+          clientData = clientsData[hObj.fromID];
+          clientData.camera = pObj.camera;
+          clientData.connected = hObj.active;
+          clientData.prodID = hObj.prodID;
+          clientData.type = hObj.type;
+          clientData.version = hObj.version;
+          clientData.local = false;
+        }
+      }
+      this.save();
+    },
+    addAll(clients) {
+      let clientsData = this.data;
+      for (var client in clients) {
+        if (clients.hasOwnProperty(client) && !clientsData.hasOwnProperty(client)) {
+          clientsData[client] = {};
+          clientsData[client].camera = clients[client].camera;
+          clientsData[client].connected = clients[client].active;
+          clientsData[client].type = clients[client].type;
+          clientsData[client].version = clients[client].version;
+          clientsData[client].local = false;
+        }
+      }
+    },
+    update(msgObj, socket) {
+      let hObj = msgObj.header;
+      let pObj = msgObj.payload;
+      let clientsData = this.data;
+      let clientData;
+      if (hObj.type != "Server") {
+        if (typeof clientsData[hObj.fromID] == "undefined") {
+          this.add(msgObj, socket);
+        } else if (hObj.fromID == socket.ID) {
+          clientsData[socket.ID] = {};
+          clientData = clientsData[socket.ID];
+          clientData.camera = socket.camera;
+          clientData.connected = socket.connected;
+          clientData.type = socket.type;
+          clientData.version = socket.version;
+          clientData.local = true;
+          clientData.pingStatus = socket.pingStatus;
+          clientData.socket = socket;
+        } else {
+          clientsData[hObj.fromID] = {};
+          clientData = clientsData[hObj.fromID];
+          clientData.camera = pObj.camera;
+          clientData.connected = hObj.active;
+          clientData.type = hObj.type;
+          clientData.version = hObj.version;
+          clientData.local = false;
+        }
+      }
+    },
+    remove(socket) {
+      let clientsData = this.data;
+      if (typeof socket == "string") {
+        if (typeof clientsData[socket] !== "undefined" && clientsData[socket].local == true) {
+          clientsData[socket].socket.terminate();
+          delete clientsData[socket];
+        } else {
+          delete clientsData[socket];
+        }
+      } else {
+        if (socket.type != "Server" && socket.type != "Config" && socket.type != "Admin") {
+          if (typeof clientsData[socket.ID] !== "undefined" && clientsData[socket.ID].local == true) {
+            delete clientsData[socket.ID];
+            socket.terminate();
+          } else {
+            delete clientsData[socket.ID];
+          }
+        }
+      }
+      this.save();
+    },
+    disconnect(socket) {
+      let clientsData = this.data;
+      if (typeof socket == "string") {
+        if (typeof clientsData[socket] !== "undefined" && clientsData[socket].local == true) {
+          clientsData[socket].socket.terminate();
+        } else {
+          delete clientsData[socket];
+        }
+        clientsData[socket].socket = false;
+        clientsData[socket].connected = false;
+        clientsData[socket].pingStatus = "dead";
+      } else {
+        if (socket.type != "Server" && socket.type != "Config" && socket.type != "Admin") {
+          if (typeof clientsData[socket.ID] !== "undefined" && clientsData[socket.ID].local == true) {
+            socket.terminate();
+          }
+          clientsData[socket.ID].socket = false;
+          clientsData[socket.ID].connected = false;
+          clientsData[socket.ID].pingStatus = "dead";
+        }
+      }
+      this.save();
+    },
+    getDetails(socket = "ALL", print = false) {
+      let clientsData = this.data;
+      let details = {};
+      if (socket == "ALL") {
+        for (var client in clientsData) {
+          if (clientsData.hasOwnProperty(client)) {
+            details[client] = {};
+            details[client].camera = clientsData[client].camera;
+            details[client].name = clientsData[client].name;
+            details[client].connected = clientsData[client].connected;
+            details[client].prodID = clientsData[client].prodID;
+            details[client].type = clientsData[client].type;
+            details[client].version = clientsData[client].version;
+            details[client].local = clientsData[client].local;
+            if (clientsData[client].local == true) {
+              details[client].pingStatus = clientsData[client].pingStatus;
+              details[client].socket = "SOCKET OBJECT";
+            }
+          }
+        }
+        if (print === true) {
+          log("Clients details", details, "A");
+        } else if (print == "S") {
+          logObj("Clients details", details, "S");
+        }
+      } else if (typeof clientsData[socket.ID] !== "undefined") {
+        details[socket.ID].camera = clientsData[socket.ID].camera;
+        details[socket.ID].name = clientsData[socket.ID].name;
+        details[socket.ID].connected = clientsData[socket.ID].connected;
+        details[socket.ID].prodID = clientsData[socket.ID].prodID;
+        details[socket.ID].type = clientsData[socket.ID].type;
+        details[socket.ID].version = clientsData[socket.ID].version;
+        if (clientData.local == true) {
+          details[socket.ID].pingStatus = clientsData[socket.ID].pingStatus;
+          details[socket.ID].socket = "SOCKET OBJECT";
+        }
+        if (print) {
+          log("Clients details: "+JSON.stringify(details, null, 4), "A");
+        }
+      } else {
+        details = false;
+      }
+      return details;
+    },
+    save() {
+      if (dataBase === false) {
+        let data = JSON.stringify(this.getDetails("ALL"));
+        fs.writeFile(state.fileNameClients, data, err => {
+          if (err) {
+            log("Could not save clients state to file, permissions?", "W");
+          }
+        });
+      } else {
+        log("Not implemented yet - database connection", "W");
+      }
+    },
+    clean() {
+      log("Clearing clients states");
+      this.data = {};
+      fs.unlink(state.fileNameClients, (err) => {
+        if (err) {
+          log("Could not remove client states file, it either didn't exists or permissions?", "W");
+        } else {
+          log("Cleared clients states");
+        }
+      });
+    }
+  };
+}
+function stateMixer(state) {
+  state["mixer"] = {
+    "data":{},
+    add(msgObj, socket) {
+      let hObj = msgObj.header;
+      let pObj = msgObj.payload;
+      let mixersData = this.data;
+      let mixerData;
+      if (hObj.type != "Server") {
+        if (hObj.fromID == socket.ID) {
+          mixersData[socket.ID] = {};
+          mixerData = mixersData[socket.ID];
+          mixerData.camera = socket.camera;
+          mixerData.connected = socket.connected;
+          mixerData.type = socket.type;
+          mixerData.version = socket.version;
+          mixerData.local = true;
+          mixerData.pingStatus = socket.pingStatus;
+          mixerData.socket = socket;
+        } else {
+          mixersData[hObj.fromID] = {};
+          mixerData = mixersData[hObj.fromID];
+          mixerData.camera = pObj.camera;
+          mixerData.connected = hObj.active;
+          mixerData.type = hObj.type;
+          mixerData.version = hObj.version;
+          mixerData.local = false;
+        }
+      }
+      this.save();
+    },
+    addAll(mixers) {
+      let mixersData = this.data;
+      for (var mixer in mixers) {
+        if (mixers.hasOwnProperty(mixer) && !mixersData.hasOwnProperty(mixer)) {
+          mixersData[mixer] = {};
+          mixersData[mixer].camera = mixers[mixer].camera;
+          mixersData[mixer].connected = mixers[mixer].active;
+          mixersData[mixer].type = mixers[mixer].type;
+          mixersData[mixer].version = mixers[mixer].version;
+          mixersData[mixer].local = false;
+        }
+      }
+    },
+    update(msgObj, socket) {
+      let hObj = msgObj.header;
+      let pObj = msgObj.payload;
+      let mixersData = this.data;
+      let mixerData;
+      if (hObj.type != "Server") {
+        if (typeof mixersData[hObj.fromID] == "undefined") {
+          this.add(msgObj, socket);
+        } else if (hObj.fromID == socket.ID) {
+          mixersData[socket.ID] = {};
+          mixerData = mixersData[socket.ID];
+          mixerData.camera = socket.camera;
+          mixerData.connected = socket.connected;
+          mixerData.type = socket.type;
+          mixerData.version = socket.version;
+          mixerData.local = true;
+          mixerData.pingStatus = socket.pingStatus;
+          mixerData.socket = socket;
+        } else {
+          mixersData[hObj.fromID] = {};
+          mixerData = mixersData[hObj.fromID];
+          mixerData.camera = pObj.camera;
+          mixerData.connected = hObj.active;
+          mixerData.type = hObj.type;
+          mixerData.version = hObj.version;
+          mixerData.local = false;
+        }
+      }
+    },
+    remove(socket) {
+      let mixersData = this.data;
+      if (typeof socket == "string") {
+        if (typeof mixersData[socket] !== "undefined" && mixersData[socket].local == true) {
+          mixersData[socket].socket.terminate();
+          delete mixersData[socket];
+        } else {
+          delete mixersData[socket];
+        }
+      } else {
+        if (socket.type != "Server" && socket.type != "Config" && socket.type != "Admin") {
+          if (typeof mixersData[socket.ID] !== "undefined" && mixersData[socket.ID].local == true) {
+            delete mixersData[socket.ID];
+            socket.terminate();
+          } else {
+            delete mixersData[socket.ID];
+          }
+        }
+      }
+      this.save();
+    },
+    getDetails(socket = "ALL", print = false) {
+      let mixersData = this.data;
+      let details = {};
+      if (socket = "ALL") {
+        for (var mixer in mixersData) {
+          if (mixersData.hasOwnProperty(mixer)) {
+            details[mixer] = {};
+            details[mixer].camera = mixersData[mixer].camera;
+            details[mixer].connected = mixersData[mixer].connected;
+            details[mixer].type = mixersData[mixer].type;
+            details[mixer].version = mixersData[mixer].version;
+            details[mixer].local = mixersData[mixer].local;
+            if (mixersData[mixer].local == true) {
+              details[mixer].pingStatus = mixersData[mixer].pingStatus;
+              details[mixer].socket = "SOCKET OBJECT";
+            }
+          }
+        }
+        if (print === true) {
+          log("mixers details", details, "A");
+        } else if (print == "S") {
+          logObj("mixers details", details, "S");
+        }
+      } else if (typeof mixersData[socket.ID] !== "undefined") {
+        details[socket.ID].camera = mixersData[socket.ID].camera;
+        details[socket.ID].connected = mixersData[socket.ID].connected;
+        details[socket.ID].type = mixersData[socket.ID].type;
+        details[socket.ID].version = mixersData[socket.ID].version;
+        if (mixerData.local == true) {
+          details[socket.ID].pingStatus = mixersData[socket.ID].pingStatus;
+          details[socket.ID].socket = "SOCKET OBJECT";
+        }
+        if (print) {
+          log("mixers details: "+JSON.stringify(details, null, 4), "A");
+        }
+      } else {
+        details = false;
+      }
+      return details;
+    },
+    save() {
+      if (dataBase === false) {
+        let data = JSON.stringify(this.getDetails("ALL"));
+        fs.writeFile(state.fileNameMixers, data, err => {
+          if (err) {
+            log("Could not save mixers state to file, permissions?", "W");
+          }
+        });
+      } else {
+        log("Not implemented yet - database connection", "W");
+      }
+    },
+    clean() {
+      log("Clearing mixers states");
+      this.data = {};
+      fs.unlink(state.fileNameMixers, (err) => {
+        if (err) {
+          log("Could not remove mixer states file, it either didn't exists or permissions?", "W");
+        } else {
+          log("Cleared mixers states");
+        }
+      });
+    }
+  };
+}
+function stateBusses(state) {
+  state["busses"] = {
+    "data":{},
+    getProdID(prodName) {
+      for (var ID in this.data) {
+        if (this.data.hasOwnProperty(ID)) {
+          if (this.data[ID].name == prodName) {
+            return ID;
+          }
+        }
+      }
+      return "NAN";
+    },
+    getProdName(ID) {
+      return this.data[ID].name;
+    },
+    addProduction(prodName = "default") {
+      let ID = getProdID(prodName);
+      if (ID == "NAN") {
+        this.data[ID] = {
+          "name":prodName,
+          "busses":{}
+        };
+      } else {
+        this.data[ID].name = prodName;
+      }
+      return ID;
+    },
+    addProductionID(prodID = 1, prodName = "default") {
+      if (typeof this.data[prodID] == "undefined") {
+        this.data[prodID] = {
+          "name":prodName,
+          "busses":{}
+        }
+        return prodName;
+      } else {
+        return this.data[prodID].name;
+      }
+    },
+    setProduction(obj, prodID = 1) {
+      this.data[prodID] = obj;
+    },
+
+    getBusID(prodID, busName) {
+      addProductionID(prodID);
+      let bus = this.data[prodID].busses;
+      for (var ID in bus) {
+        if (bus.hasOwnProperty(ID)) {
+          if (bus[ID].name == busName) {
+            return ID;
+          }
+        }
+      }
+      return "NAN";
+    },
+    getBusName(prodID, busID) {
+      if (typeof this.data[prodID].busses[busID] == "undefined") {
+          this.data[prodID].busses[busID] = {
+            "name":"program",
+            "inputs":2,
+            "names":{}
+          }
+      }
+      return this.data[prodID].busses[busID].name;
+    },
+    addBus(busName = "Program", prodID = 1) {
+      addProductionID(prodID);
+      let ID = getBusID(prodName);
+      if (ID == "NAN") {
+        this.data[prodID].busses[ID] = {
+          "name":busName,
+          "inputs":1,
+          "names":{}
+        };
+      } else {
+        this.data[prodID].busses[ID].name = busName;
+      }
+      return ID;
+    },
+    setBus(obj, busName = "Program", prodID = 1) {
+      let busID = addBus(busName, prodID);
+      this.data[prodID].busses[busID].names = obj;
+    },
+
+    setName(name, input, busID = 1, prodID = 1) {
+      let busName = getBusName(busID);
+      addBus(busName, prodID);
+      this.data[prodID].busses[busID].names[input] = name;
+    },
+
+    getName(input, busID = 1, prodID = 1) {
+      return this.data[prodID].busses[busID].names[input];
+    },
+    getBus(busID, prodID = 1) {
+      return this.data[prodID].busses[busID];
+    },
+    getProduction(prodID = 1) {
+      return this.data[prodID];
+    },
+    getAll() {
+      return this.data;
+    },
+
+    save() {
+      if (dataBase === false) {
+        let data = JSON.stringify(this.getAll());
+        fs.writeFile(state.fileNameBuss, data, err => {
+          if (err) {
+            log("Could not save buss state to file, permissions?", "W");
+          }
+        });
+      } else {
+        log("Not implemented yet - database connection", "W");
+      }
+    },
+    clean() {
+      log("Clearing buss states");
+      this.data = {};
+      fs.unlink(state.fileNameBuss, (err) => {
+        if (err) {
+          log("Could not remove bus states file, it either didn't exists or permissions?", "W");
+        } else {
+          log("Cleared buss states");
+        }
+      });
+    }
+  };
+}
+
+/* Core functions & Message handeling */
+
 function coreDoRegister(socket, msgObj) {
   let hObj = msgObj.header;
   let pObj = msgObj.payload;
@@ -1004,6 +1197,16 @@ function coreDoRegister(socket, msgObj) {
   }
   if (typeof socket.version == "undefined") {
     socket.version = hObj.version;
+  }
+  if (typeof socket.prodID == "undefined") {
+    socket.prodID = hObj.prodID;
+  }
+  if (hObj.version !== version) {
+    if (hObj.version.substr(0, hObj.version.indexOf('.')) != version.substr(0, version.indexOf('.'))) {
+      log("Connected client has different major version, it will not work with this server!", "E");
+    } else {
+      log("Connected client has differnet version, support not guaranteed", "W");
+    }
   }
   switch (hObj.type) {
     case "Config":
@@ -1042,8 +1245,10 @@ function coreDoRegister(socket, msgObj) {
     default:
       log(`${g}${hObj.fromID}${reset} Registered as new client`, "D");
       socket.connected = true;
-      if (typeof pObj.data.camera !== "undefined") {
-        socket.camera = pObj.data.camera;
+      if (typeof pObj.data !== "undefined") {
+        if (typeof pObj.data.camera !== "undefined") {
+          socket.camera = pObj.data.camera;
+        }
       }
       state.clients.add(msgObj, socket);
       sendConfigs(msgObj, socket);
@@ -1087,6 +1292,8 @@ function coreDoCommand(socket, msgObj) {
   }
   sendAll(msgObj, socket);
 }
+
+/* Outgoing links */
 
 function connectToOtherServers(retry = false) {
   let serverData = state.servers.data;
@@ -1209,6 +1416,8 @@ function connectToOtherServers(retry = false) {
   }
 }
 
+/* Sends */
+
 function sendServerListToClients() {
   log("Sending updated server list to clients", "D");
   let payload = {};
@@ -1311,6 +1520,8 @@ function sendSelf(json, socket) {
   socket.send(JSON.stringify(returnObj));
 }
 
+/* Websocket packet functions */
+
 function makeHeader(intType = type, intVersion = version) {
   let header = {};
   header.fromID = myID;
@@ -1373,6 +1584,8 @@ function arrayUnique(array) {
   return a;
 }
 
+/* Express */
+
 function startHTTPS() {
   log("Starting HTTPS server");
   if (ownHTTPserver) {
@@ -1421,9 +1634,11 @@ function startHTTPS() {
       } else {
         camera = 1;
       }
+
       response.render('tally', {
         host: host,
         camera: camera,
+        prodID: getProdFromQuery(request),
         serverName: serverName
       });
     });
@@ -1433,6 +1648,16 @@ function startHTTPS() {
       response.header('Content-type', 'text/html');
       response.render('config', {
         host: host,
+        prodID: getProdFromQuery(request),
+        serverName: serverName
+      });
+    });
+    app.get('/productions', function(request, response) {
+      log("Serving config page", "A");
+      response.header('Content-type', 'text/html');
+      response.render('prod', {
+        host: host,
+        prodID: getProdFromQuery(request),
         serverName: serverName
       });
     });
@@ -1441,6 +1666,7 @@ function startHTTPS() {
       response.header('Content-type', 'text/html');
       response.render('mixer', {
         host: host,
+        prodID: getProdFromQuery(request),
         serverName: serverName
       });
     });
@@ -1449,6 +1675,7 @@ function startHTTPS() {
       response.header('Content-type', 'text/html');
       response.render('servers', {
         host: host,
+        prodID: getProdFromQuery(request),
         serverName: serverName,
         version: version
       });
@@ -1472,6 +1699,20 @@ function startHTTPS() {
     return null;
   }
 }
+
+function getProdFromQuery(request) {
+  let prodID;
+  if (request.query.prodID) {
+    prodID = request.query.prodID;
+  } else if (request.query.prodName) {
+    prodID = state.busses.getProdID(request.query.prodName);
+  } else {
+    prodID = 1;
+  }
+  return prodID;
+}
+
+/* Config */
 
 function loadConfig(fromFile = true) {
   if (fromFile) {
@@ -1657,6 +1898,8 @@ function createConfig(error = true) {
   }
 }
 
+/* Logging */
+
 function printHeader() {
   console.log("                                                                  ");
   console.log(" __          __    _   _______      _  _                   _  _   ");
@@ -1683,6 +1926,12 @@ function printHeader() {
 
 function loadArgs() {
   if (typeof args[0] !== "undefined") {
+    if (args[0] == "--help" || args[0] == "-h" || args[0] == "-H" || args[0] == "--h" || args[0] == "--H") {
+      log(`You can start the server with two arguments: (config path) (logging level)`, "H");
+      log(`The first argument is the relative path of the config file, eg (${y}.${reset}) or (${y}/Config1${reset})`, "H");
+      log(`The second argument is the desired logging level ${w+dim}(A)ll${reset}, ${c}(D)ebug${reset}, ${y}(W)arnings${reset}, ${r}(E)rrors${reset}`, "H");
+      process.exit(1);
+    }
     if (args[0] == ".") {
       args[0] = "";
     }
@@ -1763,6 +2012,9 @@ function log(message, level, lineNumInp) {
       break;
     case "S": //Blue
       logSend(`[${timeString}]${b} NETWK: ${w}${message} ${p}${lineNum}${reset}`);
+      break;
+    case "H": //Green
+      logSend(`[${timeString}]${g}  HELP: ${w}${message}`);
       break;
     default: //Green
       logSend(`[${timeString}]${g}  CORE: ${w}${message} ${p}${lineNum}${reset}`);
