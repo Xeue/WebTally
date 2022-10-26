@@ -419,7 +419,7 @@ function stateServers(state) {
       } else if (server == host) {
         details[server] = this.getThisServer();
       } else {
-        if (typeof this.data[server] === "undefined") {
+        if (typeof this.data[server] !== "undefined") {
           const targetServer = this.data[server];
           details[server] = {
             'socket': "SOCKET OBJECT",
@@ -1092,10 +1092,10 @@ function coreDoRegister(socket, msgObj) {
     socket.prodID = header.prodID;
   }
   if (header.version !== version) {
-    if (header.version.substr(0, header.version.indexOf('.')) != version.substr(0, version.indexOf('.'))) {
+    if (header.version.split('.')[0] != version.split('.')[0]) {
       log("Connected client has different major version, it will not work with this server!", "E");
     } else {
-      log("Connected client has differnet version, support not guaranteed", "W");
+      log("Connected client has different version, support not guaranteed", "W");
     }
   }
   switch (header.type) {
@@ -1495,7 +1495,7 @@ function startHTTP(useSSL) {
   });
   app.get('/components/server', function(request, response) {
     log("Sending server component", "D");
-    let details = state.servers.getDetails(request.query.address);
+    let details = state.servers.getDetails(request.query.address)[request.query.address];
     details.address = request.query.address;
     response.header('Content-type', 'text/html');
     response.render('components/server', {details: details});

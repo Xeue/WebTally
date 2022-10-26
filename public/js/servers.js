@@ -8,14 +8,14 @@ function socketDoOpen() {
 function socketDoMessage(packet, header, payload, e) {
   switch (payload.command) {
     case "disconnect":
-      let serial = payload.data.ID;
+      const serial = payload.data.ID;
       console.log(serial);
       document.getElementById(serial).remove();
       break;
     case "server":
       console.log("adding new servers");
       for (const server in payload.servers) {
-        let thisData = payload.servers[server];
+        const thisData = payload.servers[server];
         if (payload.servers.hasOwnProperty(server) && thisData.ID !== undefined && thisData.active == true && thisData !== null) {
           $device = $(document.getElementById(thisData.ID));
           if ($device.length !== 0) {
@@ -47,8 +47,8 @@ function socketDoMessage(packet, header, payload, e) {
       }
       break;
     case "log":
-      $log = $("<div class='log'></div>");
-      let log = payload.data.log;
+      const $log = $("<div class='log'></div>");
+      const log = payload.data.log;
 
       const cols = [31,32,33,34,35,36,37];
       const specials = [1,2];
@@ -74,8 +74,8 @@ function socketDoMessage(packet, header, payload, e) {
           currnetSpec = 1;
         }
 
-        let colour = getClass(currentCul);
-        let special = getClass(currnetSpec);
+        const colour = getClass(currentCul);
+        const special = getClass(currnetSpec);
         output += `<span class="${colour} ${special}">${text}</span>`;
       }
 
