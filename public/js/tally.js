@@ -36,7 +36,7 @@ function socketDoMessage(packet, header, payload, e) {
       break;
     case "server":
       console.log("adding new servers");
-      for (var server in payload.servers) {
+      for (const server in payload.servers) {
         if (payload.servers.hasOwnProperty(server)) {
           if (!servers.includes(server) && payload.servers[server].active == true) {
             servers.push(server);
@@ -116,7 +116,7 @@ function updateCamNum(num) {
   $("#t_chngCamNum").html(num);
   $("#t_camnum").html(num);
   if (history.pushState) {
-    var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?camera=' + num;
+    const newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?camera=' + num;
     window.history.pushState({path:newurl},'',newurl);
   }
 }

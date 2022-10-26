@@ -1,6 +1,6 @@
 {
   "name": "webtally-node",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "The server application for for Sam Chilton's WebTally system",
   "main": "server.js",
   "type": "module",

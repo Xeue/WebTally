@@ -1,13 +1,12 @@
 /*jshint esversion: 6 */
 
-var connecting = 0;
-var conn;
-var connCount = 0;
-var connNum = 1;
-var currentCon;
-var connectLoop;
-var forceShut = 0;
-var version = "4.3";
+let connecting = 0;
+let conn;
+let connCount = 0;
+let connNum = 1;
+let currentCon;
+let connectLoop;
+let forceShut = 0;
 let loadTime = new Date().getTime();
 let myID;
 let type;
@@ -27,9 +26,9 @@ function socketConnect(inputType) {
       connCount = 0;
     }
     connCount++;
-    console.log("Connecting to: wss://"+servers[connNum-1]);
+    console.log(`Connecting to: ${protocol}://${servers[connNum-1]}`);
     currentCon = servers[connNum-1];
-    conn = new WebSocket('wss://'+servers[connNum-1]);
+    conn = new WebSocket(`${protocol}://${servers[connNum-1]}`);
 
     conn.onopen = function(e) {
       console.log("Connection established!");

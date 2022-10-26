@@ -14,7 +14,7 @@ function socketDoMessage(packet, header, payload, e) {
       break;
     case "server":
       console.log("adding new servers");
-      for (var server in payload.servers) {
+      for (const server in payload.servers) {
         let thisData = payload.servers[server];
         if (payload.servers.hasOwnProperty(server) && thisData.ID !== undefined && thisData.active == true && thisData !== null) {
           $device = $(document.getElementById(thisData.ID));
@@ -126,7 +126,7 @@ $(document).ready(function() {
     $trg = $(e.target);
     $srv = $trg.closest(".n_server");
     pk = $srv.attr("id");
-    var args = {};
+    const args = {};
     args.pk = $srv.attr("id");
 
     if ($trg.hasClass("n_configDev")) {

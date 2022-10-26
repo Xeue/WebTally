@@ -1,5 +1,5 @@
 
-var sent = 0;
+let sent = 0;
 
 async function AJAXLoop() {
   console.log("Requesting");
@@ -98,13 +98,13 @@ function updateCamNum(num) {
   $("#t_chngCamNum").html(num);
   $("#t_camnum").html(num);
   if (history.pushState) {
-    var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?camera=' + num;
+    const newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?camera=' + num;
     window.history.pushState({path:newurl},'',newurl);
   }
   $.get("https://"+window.location.hostname+"/updateTally.php?camera=" + CamNum, function(data) {
     $("#t_indicatior").attr("class", "");
     classes = JSON.parse(data);
-    for (var i = 0; i < classes.length; i++) {
+    for (let i = 0; i < classes.length; i++) {
       $("#t_indicatior").addClass(classes[i]);
     }
   });
@@ -116,7 +116,7 @@ function autoTrans(prog, prev) {
   conn.tally(0, "switch");
 }
 
-var clicker = false;
+let clicker = false;
 
 function clickerLoop() {
   if (clicker) {

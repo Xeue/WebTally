@@ -2,7 +2,8 @@
 /*jshint esversion: 6 */
 import { WebSocketServer } from 'ws';
 import { WebSocket } from 'ws';
-import { createServer } from 'https';
+import https from 'https';
+import http from 'http';
 import { createRequire } from "module";
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -29,193 +30,63 @@ let loggingLevel = "W";
 let debugLineNum = true;
 let createLogFile = true;
 let argLoggingLevel;
-let ownHTTPserver = true;
 let dataBase;
 let certPath;
 let keyPath;
 let serverName = "WebTally Server v4";
 let printPings = false;
+let useSSL = false;
 
 let config;
 const configLog = ['H', 'CONFIG', logs.c];
-
-let coreServer;
-let serverHTTPS;
 
 loadArgs();
 
 await loadConfig();
 const state = await setUpStates();
 
-startServer();
-
-startLoops();
-
-function startServer() {
-  if (ownHTTPserver) {
-    coreServer = new WebSocketServer({ noServer: true });
-
-    serverHTTPS = startHTTPS();
-    log("Running as own HTTPS server and hosting UI internally");
-  } else {
-    log(`Running as ${logs.y}standalone${logs.w} websocket server`, configLog);
-    coreServer = new WebSocketServer({ port: port });
-  }
-  log("Started Websocket server");
-
-  // Main websocket server functionality
-  coreServer.on('connection', socket => {
-    log("New connection established, sending it other severs list", "D");
-
-    // Sending server list
-    sendData(socket, {
-      command: "server",
-      servers: state.servers.getStatus("ALL")
-    });
-
-    socket.pingStatus = "alive";
-
-    socket.on('message', async msgJSON => {
-      let msgObj = {};
-      let pObj;
-      let hObj;
-      try {
-        msgObj = JSON.parse(msgJSON);
-        if (msgObj.payload.command !== "ping" && msgObj.payload.command !== "pong") {
-          logObj('Received', msgObj, "A");
-        } else if (printPings == true) {
-          logObj('Received', msgObj, "A");
-        }
-        pObj = msgObj.payload;
-        hObj = msgObj.header;
-        if (typeof pObj.source == "undefined") {
-          pObj.source = "default";
-        }
-        switch (pObj.command) {
-          case "meta":
-            log('Received: '+msgJSON, "D");
-            socket.send("Received meta");
-            break;
-          case "register":
-            coreDoRegister(socket, msgObj);
-            break;
-          case "disconnect":
-            log(`${logs.r}${pObj.data.ID}${logs.reset} Connection closed`, "D");
-            state.clients.disconnect(pObj.data.ID);
-            sendConfigs(msgObj, socket);
-            sendServers(msgObj);
-            break;
-          case "tally":
-            log("Recieved tally data", "D");
-            sendServers(msgObj);
-            sendClients(msgObj, socket);
-            state.tally.update(pObj.busses, pObj.source);
-            break;
-          case "config":
-            log("Config data is being sent to clients", "D");
-            if (socket.ID == hObj.fromID) {
-              sendSelf(msgObj, socket);
-            }
-            sendAll(msgObj, socket);
-            state.tally.updateClients();
-            break;
-          case "command":
-            await coreDoCommand(socket, msgObj);
-            break;
-          case "pong":
-            socket.pingStatus = "alive";
-            break;
-          case "ping":
-            socket.pingStatus = "alive";
-            let payload = {};
-            payload.command = "pong";
-            sendData(socket, payload);
-            break;
-          case "server":
-            log("Received new servers list from other server", "D");
-            let servers = pObj.servers;
-            for (let server in servers) {
-              state.servers.add(server);
-            }
-            break;
-          case "clients":
-            state.clients.addAll(pObj.clients);
-            log("Recieved clients list from other server", "D");
-            break;
-          case "error":
-            log(`Device ${hObj.fromID} has entered an error state`, "E");
-            log(`Message: ${pObj.error}`, "E");
-            logObj(`Device ${hObj.fromID} connection details`, state.clients.getDetails(socket), "E");
-            break;
-          default:
-            log("Unknown message: "+msgJSON, "W");
-            sendAll(msgObj);
-        }
-      } catch (e) {
-        try {
-          msgObj = JSON.parse(msgJSON);
-          if (msgObj.payload.command !== "ping" && msgObj.payload.command !== "pong") {
-            logObj('Received', msgObj, "A");
-          } else if (printPings == true) {
-            logObj('Received', msgObj, "A");
-          }
-          if (typeof msgObj.type == "undefined") {
-            let stack = e.stack.toString().split(/\r\n|\n/);
-            stack = JSON.stringify(stack, null, 4);
-            log(`Server error, stack trace: ${stack}`, "E");
-          } else {
-            log("A device is using old tally format, upgrade it to v4.0 or above", "E");
-          }
-        } catch (e2) {
-          log("Invalid JSON - "+e, "E");
-          log('Received: '+msgJSON, "A");
-        }
-      }
-    });
-
-    socket.on('close', () => {
-      try {
-        let oldId = JSON.parse(JSON.stringify(socket.ID));
-        log(`${logs.r}${oldId}${logs.reset} Connection closed`, "D");
-        socket.connected = false;
-        if (socket.type == "Server") {
-          log(`${logs.r}${socket.address}${logs.reset} Inbound connection closed`, "W");
-        } else {
-          state.clients.disconnect(oldId);
-        }
-        let packet = makePacket({"command":"disconnect","data":{"ID":oldId}});
-        sendServers(packet);
-        sendConfigs(packet, socket);
-      } catch (e) {
-        log("Could not end connection cleanly","E");
-      }
-    });
+const serverWS = new WebSocketServer({ noServer: true });
+log("Started Websocket server");
+const serverHTTP = startHTTP(useSSL);
+serverHTTP.listen(port);
+serverHTTP.on('upgrade', (request, socket, head) => {
+  log("Upgrade request received", "D");
+  serverWS.handleUpgrade(request, socket, head, socket => {
+    serverWS.emit('connection', socket, request);
   });
+});
 
-  coreServer.on('error', () => {
-    log("Server failed to start or crashed, please check the port is not in use", "E");
-    process.exit(1);
+// Main websocket server functionality
+serverWS.on('connection', async socket => {
+  log("New connection established, sending it other severs list", "D");
+  // Sending server list
+  sendData(socket, {
+    command: "server",
+    servers: state.servers.getStatus("ALL")
   });
+  socket.pingStatus = "alive";
+  socket.on('message', async (msgJSON)=>{
+    await onWSMessage(msgJSON, socket)
+  });
+  socket.on('close', ()=>{
+    onWSClose(socket)
+  });
+});
 
-  if (ownHTTPserver) {
-    serverHTTPS.listen(port);
-  }
-}
+serverWS.on('error', () => {
+  log("Server failed to start or crashed, please check the port is not in use", "E");
+  process.exit(1);
+});
 
-function startLoops() {
+setInterval(() => {
+  doPing();
+  connectToOtherServers();
+}, 5000);
 
-  // 5 Second ping loop
-  setInterval(() => {
-    doPing();
-    connectToOtherServers();
-  }, 5000);
-
-  // 1 Minute ping loop
-  setInterval(() => {
-    connectToOtherServers(true);
-  }, 60000);
-
-}
+// 1 Minute ping loop
+setInterval(() => {
+  connectToOtherServers(true);
+}, 60000);
 
 function doPing() {
   if (printPings) log("Doing ping", "A");
@@ -223,7 +94,7 @@ function doPing() {
     alive: 0,
     dead: 0
   };
-  coreServer.clients.forEach(client => {
+  serverWS.clients.forEach(client => {
     if (client.readyState !== WebSocket.OPEN) return
     if (client.pingStatus == "alive") {
       counts.alive++;
@@ -262,18 +133,14 @@ async function setUpStates() {
 
   await folderExists(dir, true);
   await Promise.all([
-    fs.promises.readFile(state.fileNameTally).then(data=>{
+    readFile(state.fileNameTally, {"default":{"main":{}}}).then((data)=>{
       if (typeof data !== "undefined") {
         state.tally.data = JSON.parse(data);
       } else {
         state.tally.data = {"default":{"main":{}}};
       }
-    }).catch(error=>{
-      log("Could not read tally state from file, either invalid permissions or it doesn't exist yet", "W");
-      logObj("Message", error, "W");
     }),
-
-    fs.promises.readFile(state.fileNameServers).then(data=>{
+    readFile(state.fileNameServers).then((data)=>{
       if (typeof data === "undefined") return;
       let serverData = state.servers.data;
       serverData = JSON.parse(data);
@@ -283,52 +150,24 @@ async function setUpStates() {
           serverData[server].connected = false;
         }
       }
-    }).catch(error=>{
-      log("Could not read servers state from file, either invalid permissions or it doesn't exist yet", "W");
-      logObj("Message", error, "W");
     }),
-
-    fs.promises.readFile(state.fileNameClients).then(data=>{
+    readFile(state.fileNameClients).then((data)=>{
       if (typeof data === "undefined") return;
       state.clients.data = JSON.parse(data);
-    }).catch(error=>{
-      log("Could not read client state from file, either invalid permissions or it doesn't exist yet", "W");
-      logObj("Message", error, "W");
     }),
-
-    fs.promises.readFile(state.fileNameMixers).then(data=>{
+    readFile(state.fileNameMixers).then((data)=>{
       if (typeof data === "undefined") return;
       state.mixer.data = JSON.parse(data);
-    }).catch(error=>{
-      log("Could not read mixer state from file, either invalid permissions or it doesn't exist yet", "W");
-      logObj("Message", error, "W");
     }),
-
-    fs.promises.readFile(state.fileNameBuss).then(data=>{
+    readFile(state.fileNameBuss).then((data)=>{
       if (typeof data === "undefined") return;
       state.bus.data = JSON.parse(data);
-    }).catch(error=>{
-      log("Could not read bus state from file, either invalid permissions or it doesn't exist yet", "W");
-      logObj("Message", error, "W");
     }),
-
-    fs.promises.readFile(state.fileNameBuss).then(data=>{
+    readFile(state.fileNameProperties, {"myID": myID}).then((data)=>{
       if (typeof data === "undefined") return;
       const properties = JSON.parse(data);
       myID = properties.myID;
-      log(`Server ID is: ${logs.y}${myID}${logs.w}`);
-    }).catch(async error=>{
-      log("Could not read server properties from file, either invalid permissions or it doesn't exist yet", "W");
-      logObj("Message", error, "W");
-      const properties = {
-        "myID": myID
-      };
-      try {
-        await fs.promises.writeFile(state.fileNameProperties, JSON.stringify(properties));
-      } catch (error) {
-        log("Could not save server properties to file, permissions?", "W");
-        logObj("Message", error, "W");
-      }
+      log(`Server ID is: ${logs.y}${myID}${logs.w}`, configLog);
     })
   ]);
   return state;
@@ -338,45 +177,37 @@ function stateTally(state) {
   state["tally"] = {
     "data":{},
     update(busses, source = "default") {
-      let savedBusses = this.data[source];
-      if (typeof savedBusses == "undefined") {
-        savedBusses = {};
-      }
+      const savedBusses = typeof this.data[source] == "undefined" ? {} : this.data[source];
 
-      for (let busName in busses) {
-        if (busses.hasOwnProperty(busName)) {
-          let bus = busses[busName];
-          for (var camNum in bus) {
-            if (bus.hasOwnProperty(camNum)) {
-              let cam = bus[camNum];
-              if (typeof savedBusses[busName] == "undefined") {
-                this.newBus(busName, source);
-              }
-
-              let savedBus = savedBusses[busName];
-
+      for (const busName in busses) {
+        if (!busses.hasOwnProperty(busName)) {
+          const bus = busses[busName];
+          for (const camNum in bus) {
+            if (!bus.hasOwnProperty(camNum)) {
+              const cam = bus[camNum];
+              const savedBus = typeof savedBusses[busName] == "undefined" ? this.newBus(busName, source) : savedBusses[busName];
+    
               if (typeof savedBus[camNum] == "undefined") {
-                savedBus[camNum] = {"prog":false,"prev":false};
+                savedBus[camNum] = {
+                  "prog":false,
+                  "prev":false
+                };
               }
-
+    
               if (typeof cam.prev != "undefined") {
                 savedBus[camNum].prev = cam.prev;
               }
               if (typeof cam.prog != "undefined") {
                 savedBus[camNum].prog = cam.prog;
               }
-
             }
           }
         }
       }
 
-      if (dataBase === false) {
-        let data = JSON.stringify(this.data);
-        fs.writeFile(state.fileNameTally, data, err => {
-          if (err) {
-            log("Could not save tally state to file, permissions?", "W");
-          }
+      if (!dataBase) {
+        fs.writeFile(state.fileNameTally, JSON.stringify(this.data), error => {
+          if (error) logObj("Could not save tally state to file", error, "W");
         });
       } else {
         log("Not implemented yet - database connection", "W");
@@ -395,17 +226,17 @@ function stateTally(state) {
         this.newSoruce(source);
       }
       this.data[source][busName] = {};
+      return this.data[source][busName];
     },
     updateClients(socket = null) {
       setTimeout(function() {
-        for (var source in state.tally.data) {
+        for (const source in state.tally.data) {
           if (state.tally.data.hasOwnProperty(source)) {
-            let payload = {};
-            payload.busses = {};
-            payload.busses = state.tally.data[source];
-            payload.command = "tally";
-            payload.source = source;
-            let packet = makePacket(payload);
+            const packet = makePacket({
+              'busses': state.tally.data[source],
+              'command': "tally",
+              'source': source
+            });
             if (socket == null) {
               sendClients(packet);
             } else {
@@ -417,14 +248,13 @@ function stateTally(state) {
     },
     updateServer(socket) {
       setTimeout(function() {
-        for (var source in this.data) {
+        for (const source in this.data) {
           if (this.data.hasOwnProperty(source)) {
-            let payload = {};
-            payload.busses = {};
-            payload.busses = this.data[source];
-            payload.command = "tally";
-            payload.source = source;
-            let packet = makePacket(payload);
+            const packet = makePacket({
+              'busses': this.data[source],
+              'command': "tally",
+              'source': source
+            });
             socket.send(JSON.stringify(packet));
           }
         }
@@ -468,7 +298,7 @@ function stateServers(state) {
           }
         }
         connectToOtherServers();
-        if (coreServer) {
+        if (serverWS) {
           sendServerListToClients();
         }
       } else if (url !== host) {
@@ -483,7 +313,7 @@ function stateServers(state) {
     },
     update(address, header, name) {
       if (this.data.hasOwnProperty(address) && address !== host) {
-        log("Updating server details for: "+address, "D");
+        log(`Updating server details for: ${address}`, "D");
         this.data[address].version = header.version;
         this.data[address].ID = header.fromID;
         if (typeof name !== "undefined") {
@@ -491,10 +321,10 @@ function stateServers(state) {
         } else {
           this.data[address].Name = `Webtally v${header.version} server`;
         }
-        let payload = {};
-        payload.command = "server";
-        payload.servers = this.getDetails(address, true);
-        sendAdmins(makePacket(payload));
+        sendAdmins(makePacket({
+          'command': "server",
+          'servers': this.getDetails(address, true)
+        }));
         sendServerListToClients();
       } else {
         log("Address not registered, adding: "+address, "D");
@@ -514,22 +344,21 @@ function stateServers(state) {
         delete this.data[url];
       }
 
-      coreServer.clients.forEach(function each(client) {
+      serverWS.clients.forEach(function each(client) {
         if (client.address == url && client.readyState === WebSocket.OPEN) {
           client.terminate();
         }
       });
-
-      let payload = {};
-      payload.command = "server";
-      payload.servers = this.getDetails(url, true);
-      sendAdmins(makePacket(payload));
+      sendAdmins(makePacket({
+        'command': 'server',
+        'servers': this.getDetails(url, true)
+      }));
       this.save();
     },
     getURLs(print = false) {
-      let serverDataList = [];
-      let serverData = this.data;
-      for (var server in serverData) {
+      const serverDataList = [];
+      const serverData = this.data;
+      for (const server in serverData) {
         if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function' && serverData[server].connected == true) {
           serverDataList.push(server);
         }
@@ -540,9 +369,9 @@ function stateServers(state) {
       return serverDataList;
     },
     getStatus(print = false) {
-      let serverDataTrimmed = {};
-      let serverData = this.data;
-      for (var server in serverData) {
+      const serverDataTrimmed = {};
+      const serverData = this.data;
+      for (const server in serverData) {
         if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function') {
           serverDataTrimmed[server] = {};
           serverDataTrimmed[server].active = serverData[server].active;
@@ -555,43 +384,47 @@ function stateServers(state) {
       return serverDataTrimmed;
     },
     getDetails(server = "ALL", print = false) {
-      let details = {};
+      const details = {};
       if (server == "ALL") {
-        for (var data in this.data) {
-          if (this.data.hasOwnProperty(data)) {
-            details[data] = {};
-            details[data].socket = "SOCKET OBJECT";
-            details[data].active = this.data[data].active;
-            details[data].connected = this.data[data].connected;
-            details[data].attempts = this.data[data].attempts;
-            details[data].version = this.data[data].version;
-            details[data].ID = this.data[data].ID;
-            details[data].Name = this.data[data].Name;
-          }
+        for (const serverName in this.data) {
+          if (!this.data.hasOwnProperty(serverName)) {
+            const server = this.data[serverName];
+            details[data] = {
+              'socket': "SOCKET OBJECT",
+              'active': server.active,
+              'connected': server.connected,
+              'attempts': server.attempts,
+              'version': server.version,
+              'ID': server.ID,
+              'Name': server.Name
+            };
+          };
         }
 
-        for (var detail in details) {
-          if (details.hasOwnProperty(detail)) {
+        for (const detail in details) {
+          if (!details.hasOwnProperty(detail)) {
             if (details[detail].connected) {
               details[detail].socket = "SOCKET OBJECT";
             } else {
               details[detail].socket = null;
             }
-          }
+          };
         }
       } else if (server == host) {
         details[server] = this.getThisServer();
       } else {
-        if (typeof this.data[server] !== "undefined") {
-          details[server] = {};
-          details[server].socket = "SOCKET OBJECT";
-          details[server].active = this.data[server].active;
-          details[server].connected = this.data[server].connected;
-          details[server].attempts = this.data[server].attempts;
-          details[server].version = this.data[server].version;
-          details[server].ID = this.data[server].ID;
-          details[server].Name = this.data[server].Name;
-        }
+        if (typeof this.data[server] === "undefined") {
+          const targetServer = this.data[server];
+          details[server] = {
+            'socket': "SOCKET OBJECT",
+            'active': targetServer.active,
+            'connected': targetServer.connected,
+            'attempts': targetServer.attempts,
+            'version': targetServer.version,
+            'ID': targetServer.ID,
+            'Name': targetServer.Name
+          };
+        };
       }
       if (print === true) {
         logObj("Server details", details, "A");
@@ -601,7 +434,7 @@ function stateServers(state) {
       return details;
     },
     getThisServer() {
-      let thisServer = {
+      return {
         "socket": "SOCKET OBJECT",
         "active":true,
         "connected":true,
@@ -610,11 +443,10 @@ function stateServers(state) {
         "ID":myID,
         "Name":serverName
       };
-      return thisServer;
     },
     save() {
       if (dataBase === false) {
-        let data = JSON.stringify(this.getDetails("ALL", true));
+        const data = JSON.stringify(this.getDetails("ALL", true));
         fs.writeFile(state.fileNameServers, data, err => {
           if (err) {
             log("Could not save servers state to file, permissions?", "W");
@@ -626,8 +458,8 @@ function stateServers(state) {
     },
     clean() {
       log("Clearing server states");
-      let servers = this.getURLs();
-      for (var i = 0; i < servers.length; i++) {
+      const servers = this.getURLs();
+      for (let i = 0; i < servers.length; i++) {
         this.remove(servers[i]);
       }
       this.data = {};
@@ -645,79 +477,77 @@ function stateClients(state) {
   state["clients"] = {
     "data":{},
     add(msgObj, socket) {
-      let hObj = msgObj.header;
-      let pObj = msgObj.payload;
-      let clientsData = this.data;
-      let clientData;
-      if (hObj.type != "Server") {
-        if (hObj.fromID == socket.ID) {
-          clientsData[socket.ID] = {};
-          clientData = clientsData[socket.ID];
-          clientData.camera = socket.camera;
-          clientData.connected = socket.connected;
-          clientData.prodID = socket.prodID;
-          clientData.type = socket.type;
-          clientData.version = socket.version;
-          clientData.local = true;
-          clientData.pingStatus = socket.pingStatus;
-          clientData.socket = socket;
-        } else {
-          clientsData[hObj.fromID] = {};
-          clientData = clientsData[hObj.fromID];
-          clientData.camera = pObj.camera;
-          clientData.connected = hObj.active;
-          clientData.prodID = hObj.prodID;
-          clientData.type = hObj.type;
-          clientData.version = hObj.version;
-          clientData.local = false;
-        }
+      const header = msgObj.header;
+      const payload = msgObj.payload;
+      if (header.type == "Server") return;
+      if (header.fromID == socket.ID) {
+        this.data[socket.ID] = {
+          'camera': socket.camera,
+          'connected': socket.connected,
+          'prodID': socket.prodID,
+          'type': socket.type,
+          'version': socket.version,
+          'local': true,
+          'pingStatus': socket.pingStatus,
+          'socket': socket
+        };
+      } else {
+        this.data[header.fromID] = {
+          'camera': payload.camera,
+          'connected': header.active,
+          'prodID': header.prodID,
+          'type': header.type,
+          'version': header.version,
+          'local': false
+        };
       }
       this.save();
     },
     addAll(clients) {
-      let clientsData = this.data;
-      for (var client in clients) {
-        if (clients.hasOwnProperty(client) && !clientsData.hasOwnProperty(client)) {
-          clientsData[client] = {};
-          clientsData[client].camera = clients[client].camera;
-          clientsData[client].connected = clients[client].active;
-          clientsData[client].type = clients[client].type;
-          clientsData[client].version = clients[client].version;
-          clientsData[client].local = false;
+      const clientsData = this.data;
+      for (const clientName in clients) {
+        if (clients.hasOwnProperty(clientName) && !clientsData.hasOwnProperty(clientName)) {
+          const client = clients[clientName];
+          clientsData[clientName] = {
+            'camera': client.camera,
+            'connected': client.active,
+            'type': client.type,
+            'version': client.version,
+            'local': false
+          };
         }
       }
     },
     update(msgObj, socket) {
-      let hObj = msgObj.header;
-      let pObj = msgObj.payload;
-      let clientsData = this.data;
-      let clientData;
-      if (hObj.type != "Server") {
-        if (typeof clientsData[hObj.fromID] == "undefined") {
+      const header = msgObj.header;
+      const payload = msgObj.payload;
+      const clientsData = this.data;
+      if (header.type != "Server") {
+        if (typeof clientsData[header.fromID] == "undefined") {
           this.add(msgObj, socket);
-        } else if (hObj.fromID == socket.ID) {
-          clientsData[socket.ID] = {};
-          clientData = clientsData[socket.ID];
-          clientData.camera = socket.camera;
-          clientData.connected = socket.connected;
-          clientData.type = socket.type;
-          clientData.version = socket.version;
-          clientData.local = true;
-          clientData.pingStatus = socket.pingStatus;
-          clientData.socket = socket;
+        } else if (header.fromID == socket.ID) {
+          clientsData[socket.ID] = {
+            'camera': socket.camera,
+            'connected': socket.connected,
+            'type': socket.type,
+            'version': socket.version,
+            'local': true,
+            'pingStatus': socket.pingStatus,
+            'socket': socket
+          };
         } else {
-          clientsData[hObj.fromID] = {};
-          clientData = clientsData[hObj.fromID];
-          clientData.camera = pObj.camera;
-          clientData.connected = hObj.active;
-          clientData.type = hObj.type;
-          clientData.version = hObj.version;
-          clientData.local = false;
+          clientsData[header.fromID] = {
+            'camera': payload.camera,
+            'connected': header.active,
+            'type': header.type,
+            'version': header.version,
+            'local': false
+          };
         }
       }
     },
     remove(socket) {
-      let clientsData = this.data;
+      const clientsData = this.data;
       if (typeof socket == "string") {
         if (typeof clientsData[socket] !== "undefined" && clientsData[socket].local == true) {
           clientsData[socket].socket.terminate();
@@ -726,19 +556,21 @@ function stateClients(state) {
           delete clientsData[socket];
         }
       } else {
-        if (socket.type != "Server" && socket.type != "Config" && socket.type != "Admin") {
-          if (typeof clientsData[socket.ID] !== "undefined" && clientsData[socket.ID].local == true) {
-            delete clientsData[socket.ID];
-            socket.terminate();
-          } else {
-            delete clientsData[socket.ID];
-          }
+        if ( socket.type == "Server"
+          || socket.type == "Config"
+          || socket.type == "Admin"
+        ) return;
+        if (typeof clientsData[socket.ID] !== "undefined" && clientsData[socket.ID].local == true) {
+          delete clientsData[socket.ID];
+          socket.terminate();
+        } else {
+          delete clientsData[socket.ID];
         }
       }
       this.save();
     },
     disconnect(socket) {
-      let clientsData = this.data;
+      const clientsData = this.data;
       if (typeof socket == "string") {
         if (typeof clientsData[socket] !== "undefined" && clientsData[socket].local == true) {
           clientsData[socket].socket.terminate();
@@ -749,51 +581,57 @@ function stateClients(state) {
         clientsData[socket].connected = false;
         clientsData[socket].pingStatus = "dead";
       } else {
-        if (socket.type != "Server" && socket.type != "Config" && socket.type != "Admin") {
-          if (typeof clientsData[socket.ID] !== "undefined" && clientsData[socket.ID].local == true) {
-            socket.terminate();
-          }
-          clientsData[socket.ID].socket = false;
-          clientsData[socket.ID].connected = false;
-          clientsData[socket.ID].pingStatus = "dead";
+        if ( socket.type == "Server"
+          || socket.type == "Config"
+          || socket.type == "Admin"
+        ) return;
+        if (typeof clientsData[socket.ID] !== "undefined" && clientsData[socket.ID].local == true) {
+          socket.terminate();
         }
+        clientsData[socket.ID].socket = false;
+        clientsData[socket.ID].connected = false;
+        clientsData[socket.ID].pingStatus = "dead";
       }
       this.save();
     },
     getDetails(socket = "ALL", print = false) {
-      let clientsData = this.data;
+      const clientsData = this.data;
       let details = {};
+      const clientBySocket = clientsData[socket.ID];
       if (socket == "ALL") {
-        for (var client in clientsData) {
-          if (clientsData.hasOwnProperty(client)) {
-            details[client] = {};
-            details[client].camera = clientsData[client].camera;
-            details[client].name = clientsData[client].name;
-            details[client].connected = clientsData[client].connected;
-            details[client].prodID = clientsData[client].prodID;
-            details[client].type = clientsData[client].type;
-            details[client].version = clientsData[client].version;
-            details[client].local = clientsData[client].local;
-            if (clientsData[client].local == true) {
-              details[client].pingStatus = clientsData[client].pingStatus;
-              details[client].socket = "SOCKET OBJECT";
-            }
+        for (const clientID in clientsData) {
+          if (!clientsData.hasOwnProperty(clientID)) return;
+          const client = clientsData[clientID];
+          details[clientID] = {
+            'camera': client.camera,
+            'name': client.name,
+            'connected': client.connected,
+            'prodID': client.prodID,
+            'type': client.type,
+            'version': client.version,
+            'local': client.local
+          };
+          if (client.local == true) {
+            details[clientID].pingStatus = client.pingStatus;
+            details[clientID].socket = "SOCKET OBJECT";
           }
         }
         if (print === true) {
-          log("Clients details", details, "A");
+          logObj("Clients details", details, "A");
         } else if (print == "S") {
           logObj("Clients details", details, "S");
         }
-      } else if (typeof clientsData[socket.ID] !== "undefined") {
-        details[socket.ID].camera = clientsData[socket.ID].camera;
-        details[socket.ID].name = clientsData[socket.ID].name;
-        details[socket.ID].connected = clientsData[socket.ID].connected;
-        details[socket.ID].prodID = clientsData[socket.ID].prodID;
-        details[socket.ID].type = clientsData[socket.ID].type;
-        details[socket.ID].version = clientsData[socket.ID].version;
-        if (clientData.local == true) {
-          details[socket.ID].pingStatus = clientsData[socket.ID].pingStatus;
+      } else if (typeof clientBySocket !== "undefined") {
+        details[socket.ID] = {
+          'camera': clientBySocket.camera,
+          'name': clientBySocket.name,
+          'connected': clientBySocket.connected,
+          'prodID': clientBySocket.prodID,
+          'type': clientBySocket.type,
+          'version': clientBySocket.version
+        }
+        if (clientBySocket.local == true) {
+          details[socket.ID].pingStatus = clientBySocket.pingStatus;
           details[socket.ID].socket = "SOCKET OBJECT";
         }
         if (print) {
@@ -806,7 +644,7 @@ function stateClients(state) {
     },
     save() {
       if (dataBase === false) {
-        let data = JSON.stringify(this.getDetails("ALL"));
+        const data = JSON.stringify(this.getDetails("ALL"));
         fs.writeFile(state.fileNameClients, data, err => {
           if (err) {
             log("Could not save clients state to file, permissions?", "W");
@@ -833,77 +671,75 @@ function stateMixer(state) {
   state["mixer"] = {
     "data":{},
     add(msgObj, socket) {
-      let hObj = msgObj.header;
-      let pObj = msgObj.payload;
-      let mixersData = this.data;
-      let mixerData;
-      if (hObj.type != "Server") {
-        if (hObj.fromID == socket.ID) {
-          mixersData[socket.ID] = {};
-          mixerData = mixersData[socket.ID];
-          mixerData.camera = socket.camera;
-          mixerData.connected = socket.connected;
-          mixerData.type = socket.type;
-          mixerData.version = socket.version;
-          mixerData.local = true;
-          mixerData.pingStatus = socket.pingStatus;
-          mixerData.socket = socket;
-        } else {
-          mixersData[hObj.fromID] = {};
-          mixerData = mixersData[hObj.fromID];
-          mixerData.camera = pObj.camera;
-          mixerData.connected = hObj.active;
-          mixerData.type = hObj.type;
-          mixerData.version = hObj.version;
-          mixerData.local = false;
-        }
+      const header = msgObj.header;
+      const payload = msgObj.payload;
+      const mixersData = this.data;
+      if (header.type == "Server") return;
+      if (header.fromID == socket.ID) {
+        mixersData[socket.ID] = {
+          'camera': socket.camera,
+          'connected': socket.connected,
+          'type': socket.type,
+          'version': socket.version,
+          'local': true,
+          'pingStatus': socket.pingStatus,
+          'socket': socket
+        };
+      } else {
+        mixersData[header.fromID] = {
+          'camera': payload.camera,
+          'connected': header.active,
+          'type': header.type,
+          'version': header.version,
+          'local': false
+        };
       }
       this.save();
     },
     addAll(mixers) {
-      let mixersData = this.data;
-      for (var mixer in mixers) {
-        if (mixers.hasOwnProperty(mixer) && !mixersData.hasOwnProperty(mixer)) {
-          mixersData[mixer] = {};
-          mixersData[mixer].camera = mixers[mixer].camera;
-          mixersData[mixer].connected = mixers[mixer].active;
-          mixersData[mixer].type = mixers[mixer].type;
-          mixersData[mixer].version = mixers[mixer].version;
-          mixersData[mixer].local = false;
+      const mixersData = this.data;
+      for (const mixerName in mixers) {
+        if (mixers.hasOwnProperty(mixerName) && !mixersData.hasOwnProperty(mixerName)) {
+          const mixer = mixers[mixerName];
+          mixersData[mixerName] = {
+            'camera': mixer.camera,
+            'connected': mixer.active,
+            'type': mixer.type,
+            'version': mixer.version,
+            'local': false
+          };
         }
       }
     },
     update(msgObj, socket) {
-      let hObj = msgObj.header;
-      let pObj = msgObj.payload;
-      let mixersData = this.data;
-      let mixerData;
-      if (hObj.type != "Server") {
-        if (typeof mixersData[hObj.fromID] == "undefined") {
-          this.add(msgObj, socket);
-        } else if (hObj.fromID == socket.ID) {
-          mixersData[socket.ID] = {};
-          mixerData = mixersData[socket.ID];
-          mixerData.camera = socket.camera;
-          mixerData.connected = socket.connected;
-          mixerData.type = socket.type;
-          mixerData.version = socket.version;
-          mixerData.local = true;
-          mixerData.pingStatus = socket.pingStatus;
-          mixerData.socket = socket;
-        } else {
-          mixersData[hObj.fromID] = {};
-          mixerData = mixersData[hObj.fromID];
-          mixerData.camera = pObj.camera;
-          mixerData.connected = hObj.active;
-          mixerData.type = hObj.type;
-          mixerData.version = hObj.version;
-          mixerData.local = false;
-        }
+      const header = msgObj.header;
+      const payload = msgObj.payload;
+      const mixersData = this.data;
+      if (header.type == "Server") return;
+      if (typeof mixersData[header.fromID] == "undefined") {
+        this.add(msgObj, socket);
+      } else if (header.fromID == socket.ID) {
+        mixersData[socket.ID] = {
+          'camera': socket.camera,
+          'connected': socket.connected,
+          'type': socket.type,
+          'version': socket.version,
+          'local': true,
+          'pingStatus': socket.pingStatus,
+          'socket': socket
+        };
+      } else {
+        mixersData[header.fromID] = {
+          'camera': payload.camera,
+          'connected': header.active,
+          'type': header.type,
+          'version': header.version,
+          'local': false
+        };
       }
     },
     remove(socket) {
-      let mixersData = this.data;
+      const mixersData = this.data;
       if (typeof socket == "string") {
         if (typeof mixersData[socket] !== "undefined" && mixersData[socket].local == true) {
           mixersData[socket].socket.terminate();
@@ -924,20 +760,23 @@ function stateMixer(state) {
       this.save();
     },
     getDetails(socket = "ALL", print = false) {
-      let mixersData = this.data;
+      const mixersData = this.data;
       let details = {};
-      if (socket = "ALL") {
-        for (var mixer in mixersData) {
-          if (mixersData.hasOwnProperty(mixer)) {
-            details[mixer] = {};
-            details[mixer].camera = mixersData[mixer].camera;
-            details[mixer].connected = mixersData[mixer].connected;
-            details[mixer].type = mixersData[mixer].type;
-            details[mixer].version = mixersData[mixer].version;
-            details[mixer].local = mixersData[mixer].local;
-            if (mixersData[mixer].local == true) {
-              details[mixer].pingStatus = mixersData[mixer].pingStatus;
-              details[mixer].socket = "SOCKET OBJECT";
+      const mixerFromSocket = mixersData[socket.ID];
+      if (socket == "ALL") {
+        for (const mixerName in mixersData) {
+          const mixer = mixersData[mixerName];
+          if (mixersData.hasOwnProperty(mixerName)) {
+            details[mixerName] = {
+              'camera': mixer.camera,
+              'connected': mixer.connected,
+              'type': mixer.type,
+              'version': mixer.version,
+              'local': mixer.local
+            };
+            if (mixer.local == true) {
+              details[mixerName].pingStatus = mixer.pingStatus;
+              details[mixerName].socket = "SOCKET OBJECT";
             }
           }
         }
@@ -946,13 +785,15 @@ function stateMixer(state) {
         } else if (print == "S") {
           logObj("mixers details", details, "S");
         }
-      } else if (typeof mixersData[socket.ID] !== "undefined") {
-        details[socket.ID].camera = mixersData[socket.ID].camera;
-        details[socket.ID].connected = mixersData[socket.ID].connected;
-        details[socket.ID].type = mixersData[socket.ID].type;
-        details[socket.ID].version = mixersData[socket.ID].version;
-        if (mixerData.local == true) {
-          details[socket.ID].pingStatus = mixersData[socket.ID].pingStatus;
+      } else if (typeof mixerFromSocket !== "undefined") {
+        details[socket.ID] = {
+          'camera': mixerFromSocket.camera,
+          'connected': mixerFromSocket.connected,
+          'type': mixerFromSocket.type,
+          'version': mixerFromSocket.version
+        }
+        if (mixerFromSocket.local == true) {
+          details[socket.ID].pingStatus = mixerFromSocket.pingStatus;
           details[socket.ID].socket = "SOCKET OBJECT";
         }
         if (print) {
@@ -992,7 +833,7 @@ function stateBusses(state) {
   state["busses"] = {
     "data":{},
     getProdID(prodName) {
-      for (var ID in this.data) {
+      for (const ID in this.data) {
         if (this.data.hasOwnProperty(ID)) {
           if (this.data[ID].name == prodName) {
             return ID;
@@ -1005,7 +846,7 @@ function stateBusses(state) {
       return this.data[ID].name;
     },
     addProduction(prodName = "default") {
-      let ID = getProdID(prodName);
+      const ID = getProdID(prodName);
       if (ID == "NAN") {
         this.data[ID] = {
           "name":prodName,
@@ -1033,8 +874,8 @@ function stateBusses(state) {
 
     getBusID(prodID, busName) {
       addProductionID(prodID);
-      let bus = this.data[prodID].busses;
-      for (var ID in bus) {
+      const bus = this.data[prodID].busses;
+      for (const ID in bus) {
         if (bus.hasOwnProperty(ID)) {
           if (bus[ID].name == busName) {
             return ID;
@@ -1055,7 +896,7 @@ function stateBusses(state) {
     },
     addBus(busName = "Program", prodID = 1) {
       addProductionID(prodID);
-      let ID = getBusID(prodName);
+      const ID = getBusID(prodName);
       if (ID == "NAN") {
         this.data[prodID].busses[ID] = {
           "name":busName,
@@ -1068,12 +909,12 @@ function stateBusses(state) {
       return ID;
     },
     setBus(obj, busName = "Program", prodID = 1) {
-      let busID = addBus(busName, prodID);
+      const busID = addBus(busName, prodID);
       this.data[prodID].busses[busID].names = obj;
     },
 
     setName(name, input, busID = 1, prodID = 1) {
-      let busName = getBusName(busID);
+      const busName = getBusName(busID);
       addBus(busName, prodID);
       this.data[prodID].busses[busID].names[input] = name;
     },
@@ -1093,7 +934,7 @@ function stateBusses(state) {
 
     save() {
       if (dataBase === false) {
-        let data = JSON.stringify(this.getAll());
+        const data = JSON.stringify(this.getAll());
         fs.writeFile(state.fileNameBuss, data, err => {
           if (err) {
             log("Could not save buss state to file, permissions?", "W");
@@ -1119,68 +960,180 @@ function stateBusses(state) {
 
 /* Core functions & Message handeling */
 
+async function onWSMessage(msgJSON, socket) {
+  let msgObj = {};
+  try {
+    msgObj = JSON.parse(msgJSON);
+    if (msgObj.payload.command !== "ping" && msgObj.payload.command !== "pong") {
+      logObj('Received', msgObj, "A");
+    } else if (printPings == true) {
+      logObj('Received', msgObj, "A");
+    }
+    const payload = msgObj.payload;
+    const header = msgObj.header;
+    if (typeof payload.source == "undefined") {
+      payload.source = "default";
+    }
+    switch (payload.command) {
+      case "meta":
+        log('Received: '+msgJSON, "D");
+        socket.send("Received meta");
+        break;
+      case "register":
+        coreDoRegister(socket, msgObj);
+        break;
+      case "disconnect":
+        log(`${logs.r}${payload.data.ID}${logs.reset} Connection closed`, "D");
+        state.clients.disconnect(payload.data.ID);
+        sendConfigs(msgObj, socket);
+        sendServers(msgObj);
+        break;
+      case "tally":
+        log("Recieved tally data", "D");
+        sendServers(msgObj);
+        sendClients(msgObj, socket);
+        state.tally.update(payload.busses, payload.source);
+        break;
+      case "config":
+        log("Config data is being sent to clients", "D");
+        if (socket.ID == header.fromID) {
+          sendSelf(msgObj, socket);
+        }
+        sendAll(msgObj, socket);
+        state.tally.updateClients();
+        break;
+      case "command":
+        await coreDoCommand(socket, msgObj);
+        break;
+      case "pong":
+        socket.pingStatus = "alive";
+        break;
+      case "ping":
+        socket.pingStatus = "alive";
+        sendData(socket, {
+          'command': 'pong'
+        });
+        break;
+      case "server":
+        log("Received new servers list from other server", "D");
+        let servers = payload.servers;
+        for (let server in servers) {
+          state.servers.add(server);
+        }
+        break;
+      case "clients":
+        state.clients.addAll(payload.clients);
+        log("Recieved clients list from other server", "D");
+        break;
+      case "error":
+        log(`Device ${header.fromID} has entered an error state`, "E");
+        log(`Message: ${payload.error}`, "E");
+        logObj(`Device ${header.fromID} connection details`, state.clients.getDetails(socket), "E");
+        break;
+      default:
+        log("Unknown message: "+msgJSON, "W");
+        sendAll(msgObj);
+    }
+  } catch (e) {
+    try {
+      msgObj = JSON.parse(msgJSON);
+      if (msgObj.payload.command !== "ping" && msgObj.payload.command !== "pong") {
+        logObj('Received', msgObj, "A");
+      } else if (printPings == true) {
+        logObj('Received', msgObj, "A");
+      }
+      if (typeof msgObj.type == "undefined") {
+        logObj(`Server error`, e, "E");
+      } else {
+        log("A device is using old tally format, upgrade it to v4.0 or above", "E");
+      }
+    } catch (e2) {
+      logObj("Invalid JSON", e, "E");
+      log('Received: '+msgJSON, "A");
+    }
+  }
+}
+
+function onWSClose(socket) {
+  try {
+    let oldId = JSON.parse(JSON.stringify(socket.ID));
+    log(`${logs.r}${oldId}${logs.reset} Connection closed`, "D");
+    socket.connected = false;
+    if (socket.type == "Server") {
+      log(`${logs.r}${socket.address}${logs.reset} Inbound connection closed`, "W");
+    } else {
+      state.clients.disconnect(oldId);
+    }
+    let packet = makePacket({"command":"disconnect","data":{"ID":oldId}});
+    sendServers(packet);
+    sendConfigs(packet, socket);
+  } catch (e) {
+    log("Could not end connection cleanly","E");
+  }
+}
+
 function coreDoRegister(socket, msgObj) {
-  let hObj = msgObj.header;
-  let pObj = msgObj.payload;
+  const header = msgObj.header;
+  const payload = msgObj.payload;
   if (typeof socket.type == "undefined") {
-    socket.type = hObj.type;
+    socket.type = header.type;
   }
   if (typeof socket.ID == "undefined") {
-    socket.ID = hObj.fromID;
+    socket.ID = header.fromID;
   }
   if (typeof socket.version == "undefined") {
-    socket.version = hObj.version;
+    socket.version = header.version;
   }
   if (typeof socket.prodID == "undefined") {
-    socket.prodID = hObj.prodID;
+    socket.prodID = header.prodID;
   }
-  if (hObj.version !== version) {
-    if (hObj.version.substr(0, hObj.version.indexOf('.')) != version.substr(0, version.indexOf('.'))) {
+  if (header.version !== version) {
+    if (header.version.substr(0, header.version.indexOf('.')) != version.substr(0, version.indexOf('.'))) {
       log("Connected client has different major version, it will not work with this server!", "E");
     } else {
       log("Connected client has differnet version, support not guaranteed", "W");
     }
   }
-  switch (hObj.type) {
+  switch (header.type) {
     case "Config":
-      log(`${logs.g}${hObj.fromID}${logs.reset} Registered as new config controller`, "D");
+      log(`${logs.g}${header.fromID}${logs.reset} Registered as new config controller`, "D");
       sendData(socket, {"command":"clients","clients":state.clients.getDetails()});
       socket.connected = true;
       state.clients.add(msgObj, socket);
       break;
     case "Server":
-      let address = pObj.address;
-      let name = pObj.name;
+      const {address, name} = payload;
       socket.address = address;
       socket.name = name;
-      log(`${logs.g}${hObj.fromID}${logs.reset} Registered as new server`, "D");
+      log(`${logs.g}${header.fromID}${logs.reset} Registered as new server`, "D");
       log(`${logs.g}${address}${logs.reset} Registered as new inbound server connection`, "S");
       state.servers.add(address);
-      state.servers.update(address, hObj, name);
+      state.servers.update(address, header, name);
       break;
     case "Admin":
-      log(`${logs.g}${hObj.fromID}${logs.reset} Registered as new admin controller`, "D");
-      let payload = {};
-      payload.command = "server";
-      payload.servers = state.servers.getDetails("ALL");
-      payload.servers[host] = state.servers.getThisServer();
+      log(`${logs.g}${header.fromID}${logs.reset} Registered as new admin controller`, "D");
+      const servers = state.servers.getDetails("ALL");
+      servers[host] = state.servers.getThisServer();
       socket.connected = true;
       state.clients.add(msgObj, socket);
-      sendAdmins(makePacket(payload));
+      sendAdmins(makePacket({
+        'command': "server",
+        'servers': servers
+      }));
       break;
     case "Mixer":
-      log(`${logs.g}${hObj.fromID}${logs.reset} Registered as new vision mixer/GPI controler`, "D");
+      log(`${logs.g}${header.fromID}${logs.reset} Registered as new vision mixer/GPI controler`, "D");
       socket.connected = true;
       state.mixer.add(msgObj, socket);
       sendConfigs(msgObj, socket);
       sendServers(msgObj);
       break;
     default:
-      log(`${logs.g}${hObj.fromID}${logs.reset} Registered as new client`, "D");
+      log(`${logs.g}${header.fromID}${logs.reset} Registered as new client`, "D");
       socket.connected = true;
-      if (typeof pObj.data !== "undefined") {
-        if (typeof pObj.data.camera !== "undefined") {
-          socket.camera = pObj.data.camera;
+      if (typeof payload.data !== "undefined") {
+        if (typeof payload.data.camera !== "undefined") {
+          socket.camera = payload.data.camera;
         }
       }
       state.clients.add(msgObj, socket);
@@ -1191,11 +1144,11 @@ function coreDoRegister(socket, msgObj) {
 }
 
 async function coreDoCommand(socket, msgObj) {
-  let pObj = msgObj.payload;
+  let payload = msgObj.payload;
   log("A command is being sent to clients", "D");
-  if (pObj.serial == myID) {
+  if (payload.serial == myID) {
     log("Command for this server recieved", "D");
-    switch (pObj.action) {
+    switch (payload.action) {
       case "clearStates":
         state.tally.clean();
         state.clients.clean();
@@ -1229,42 +1182,42 @@ async function coreDoCommand(socket, msgObj) {
 /* Outgoing links */
 
 function connectToOtherServers(retry = false) {
-  let serverData = state.servers.data;
-  for (let server in serverData) {
+  const serverData = state.servers.data;
+  for (const server in serverData) {
     if (serverData.hasOwnProperty(server) && typeof serverData[server] !== 'function') {
-      let thisServer = serverData[server];
+      const thisServer = serverData[server];
       if ((!thisServer.connected && thisServer.active && thisServer.attempts < 3) || (retry && !thisServer.connected)) {
-        let outbound;
         let inError = false;
         if (retry) {
           log(`Retrying connection to dead server: ${logs.r}${server}${logs.reset}`, "W");
         }
-        outbound = new WebSocket("wss://"+server);
+        const outbound = new WebSocket("wss://"+server);
 
         thisServer.socket = outbound;
 
         outbound.on('open', function open() {
-          let payload = {};
-          payload.command = "register";
-          payload.address = host;
-          payload.name = serverName;
-          sendData(outbound, payload);
+          sendData(outbound, {
+            'command': "register",
+            'address': host,
+            'name': serverName
+          });
           log(`${logs.g}${server}${logs.reset} Established as new outbound server connection`, "S");
           thisServer.connected = true;
           thisServer.active = true;
           thisServer.attempts = 0;
-          payload = {};
-          payload.command = "server";
-          payload.servers = state.servers.getDetails(server);
-          sendAdmins(makePacket(payload));
-          sendData(outbound, {"command":"clients","clients":state.clients.getDetails()});
+          sendAdmins(makePacket({
+            'command': "server",
+            'servers': state.servers.getDetails(server)
+          }));
+          sendData(outbound, {
+            "command":"clients",
+            "clients":state.clients.getDetails()
+          });
           state.tally.updateServer(outbound);
         });
 
         outbound.on('message', function message(msgJSON) {
           let msgObj = {};
-          let pObj;
-          let hObj;
           try {
             msgObj = JSON.parse(msgJSON);
             if (msgObj.payload.command !== "ping" && msgObj.payload.command !== "pong") {
@@ -1272,17 +1225,17 @@ function connectToOtherServers(retry = false) {
             } else if (printPings == true) {
               logObj('Received from other server', msgObj, "A");
             }
-            pObj = msgObj.payload;
-            hObj = msgObj.header;
-            switch (pObj.command) {
+            const payload = msgObj.payload;
+            const header = msgObj.header;
+            switch (payload.command) {
               case "ping":
-                let payload = {};
-                payload.command = "pong";
-                sendData(outbound, payload);
+                sendData(outbound, {
+                  'command': 'pong'
+                });
                 break;
               case "server":
                 log("Received new servers list from other server", "D");
-                let servers = pObj.servers;
+                let servers = payload.servers;
                 for (let server in servers) {
                   state.servers.add(server);
                 }
@@ -1290,7 +1243,7 @@ function connectToOtherServers(retry = false) {
               case "tally":
                 let returnObj = updateHeader(msgObj);
                 let recipients = msgObj.header.recipients;
-                coreServer.clients.forEach(function each(client) {
+                serverWS.clients.forEach(function each(client) {
                   if (client !== outbound && client.readyState === WebSocket.OPEN) {
                     if (!recipients.includes(client.address)) {
                       client.send(JSON.stringify(returnObj));
@@ -1310,15 +1263,13 @@ function connectToOtherServers(retry = false) {
                 logObj('Received from other server', msgObj, "A");
               }
               if (typeof msgObj.type == "undefined") {
-                let stack = e.stack.toString().split(/\r\n|\n/);
-                stack = JSON.stringify(stack, null, 4);
-                log(`Server error, stack trace: ${stack}`, "E");
+                logObj(`Server error`, e, "E");
               } else {
                 log("A device is using old tally format, upgrade it to v4.0 or above", "E");
               }
             } catch (e2) {
-              log("Invalid JSON from other server- "+e, "E");
-              log('Received from other server: '+msgJSON, "A");
+              logObj("Invalid JSON from other server", e, "E");
+              logObj('Received from other server', msgJSON, "A");
             }
           }
         });
@@ -1330,10 +1281,10 @@ function connectToOtherServers(retry = false) {
           if (!inError) {
             log(`${logs.r}${server}${logs.reset} Outbound connection closed`, "W");
             sendServerListToClients();
-            let payload = {};
-            payload.command = "server";
-            payload.servers = state.servers.getDetails(server);
-            sendAdmins(makePacket(payload));
+            sendAdmins(makePacket({
+              'command': "server",
+              'servers': state.servers.getDetails(server)
+            }));
           }
         });
 
@@ -1353,284 +1304,199 @@ function connectToOtherServers(retry = false) {
 
 function sendServerListToClients() {
   log("Sending updated server list to clients", "D");
-  let payload = {};
-  payload.command = "server";
-  payload.servers = state.servers.getDetails("ALL");
-
-  coreServer.clients.forEach(function each(client) {
+  const servers = state.servers.getDetails("ALL");
+  serverWS.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN && client.type !== "Admin") {
-      sendData(client, payload);
+      sendData(client, {
+        'command': 'server',
+        'servers': servers
+      });
     }
   });
 }
 
-function sendServers(json) { //Only servers
-  let obj = {};
-  if (typeof json == "object") {
-    obj = json;
-  } else {
-    obj = JSON.parse(json);
-  }
-
-  let recipients = obj.header.recipients;
-  let returnObj = updateHeader(obj);
-  let serverData = state.servers.data;
+function sendServers(packet) { //Only servers
+  const toBeSent = typeof packet == "object" ? packet : JSON.parse(packet);
+  const recipients = toBeSent.header.recipients;
+  const message = JSON.stringify(updateHeader(toBeSent));
+  const serverData = state.servers.data;
   state.servers.getDetails("ALL");
-  for (var server in serverData) {
+  for (const server in serverData) {
     if (serverData.hasOwnProperty(server) && serverData[server].connected == true && serverData[server].socket !== null) {
       if (!recipients.includes(server)) {
-        serverData[server].socket.send(JSON.stringify(returnObj));
+        serverData[server].socket.send(message);
       }
     }
   }
 }
 
-function sendClients(json, socket = null) { //All but servers
-  let obj = {};
-  if (typeof json == "object") {
-    obj = json;
-  } else {
-    obj = JSON.parse(json);
-  }
-
-  let recipients = obj.header.recipients;
-  let returnObj = updateHeader(obj);
-  coreServer.clients.forEach(function each(client) {
+function sendClients(packet, socket = null) { //All but servers
+  const toBeSent = typeof packet == "object" ? packet : JSON.parse(packet);
+  const recipients = toBeSent.header.recipients;
+  const message = JSON.stringify(updateHeader(toBeSent));
+  serverWS.clients.forEach(client => {
     if (client !== socket && client.readyState === WebSocket.OPEN) {
       if (!recipients.includes(client.address) && client.type != "Server") {
-        client.send(JSON.stringify(returnObj));
+        client.send(message);
       }
     }
   });
 }
 
-function sendConfigs(json, socket = null) { //Only config controllers
-  let obj = {};
-  if (typeof json == "object") {
-    obj = json;
-  } else {
-    obj = JSON.parse(json);
-  }
-
-  let returnObj = updateHeader(obj);
-  coreServer.clients.forEach(function each(client) {
+function sendConfigs(packet, socket = null) { //Only config controllers
+  const toBeSent = typeof packet == "object" ? packet : JSON.parse(packet);
+  const message = JSON.stringify(updateHeader(toBeSent));
+  serverWS.clients.forEach(client => {
     if (client !== socket && client.readyState === WebSocket.OPEN && client.type == "Config") {
-      client.send(JSON.stringify(returnObj));
+      client.send(message);
     }
   });
 }
 
-function sendAdmins(json, socket = null) { //Only Admin controllers
-  let obj = {};
-  if (typeof json == "object") {
-    obj = json;
-  } else {
-    obj = JSON.parse(json);
-  }
-
-  let returnObj = updateHeader(obj);
-  coreServer.clients.forEach(function each(client) {
+function sendAdmins(packet, socket = null) { //Only Admin controllers
+  const toBeSent = typeof packet == "object" ? packet : JSON.parse(packet);
+  const message = JSON.stringify(updateHeader(toBeSent));
+  serverWS.clients.forEach(client => {
     if (client !== socket && client.readyState === WebSocket.OPEN && client.type == "Admin") {
-      client.send(JSON.stringify(returnObj));
+      client.send(message);
     }
   });
 }
 
-function sendAll(json, socket) { //Send to all
-  sendServers(json);
-  sendClients(json, socket);
+function sendAll(packet, socket) { //Send to all
+  sendServers(packet);
+  sendClients(packet, socket);
 }
 
-function sendSelf(json, socket) {
-  let obj = {};
-  if (typeof json == "object") {
-    obj = json;
-  } else {
-    obj = JSON.parse(json);
-  }
-  let returnObj = updateHeader(obj);
-
-  socket.send(JSON.stringify(returnObj));
+function sendSelf(packet, socket) {
+  const toBeSent = typeof packet == "object" ? packet : JSON.parse(packet);
+  const message = JSON.stringify(updateHeader(toBeSent));
+  socket.send(message);
 }
 
 /* Websocket packet functions */
 
 function makeHeader(intType = type, intVersion = version) {
-  let header = {};
-  header.fromID = myID;
-  header.timestamp = new Date().getTime();
-  header.version = intVersion;
-  header.type = intType;
-  header.active = true;
-  header.messageID = header.timestamp;
-  header.recipients = [
-    host
-  ];
-  return header;
+  const timeStamp = new Date().getTime();
+  return {
+    'fromID': myID,
+    'timestamp': timeStamp,
+    'version': intVersion,
+    'type': intType,
+    'active': true,
+    'messageID': timeStamp,
+    'recipients': [
+      host
+    ]
+  };
 }
 
-function makePacket(json) {
-  let payload = {};
-  if (typeof json == "object") {
-    payload = json;
-  } else {
-    payload = JSON.parse(json);
-  }
-  let packet = {};
-  let header = makeHeader();
-  packet.header = header;
-  packet.payload = payload;
-  return packet;
+function makePacket(data) {
+  const payload = typeof data == "object" ? data : JSON.parse(data);
+  return {
+    'header': makeHeader(),
+    'payload': payload
+  };
 }
 
-function updateHeader(json, relayed = true) {
-  let msgObj = {};
-  if (typeof json == "object") {
-    msgObj = JSON.parse(JSON.stringify(json));
-  } else {
-    msgObj = JSON.parse(json);
-  }
-  let header = msgObj.header;
+function updateHeader(message, relayed = true) {
+  const msgObj = typeof message == "object" ? message : JSON.parse(message);
+  let recipients = msgObj.header.recipients;
   if (relayed == true) {
-    let merged = arrayUnique(header.recipients.concat(state.servers.getURLs()));
-    header.recipients = merged;
+    recipients = [...new Set(recipients.concat(state.servers.getURLs()))];
   }
   return msgObj;
 }
 
 function sendData(connection, payload) {
-  let packet = {};
-  let header = makeHeader();
-  packet.header = header;
-  packet.payload = payload;
-  connection.send(JSON.stringify(packet));
-}
-
-function arrayUnique(array) {
-  var a = array.concat();
-  for(var i=0; i<a.length; ++i) {
-    for(var j=i+1; j<a.length; ++j) {
-      if(a[i] === a[j])
-        a.splice(j--, 1);
-    }
-  }
-  return a;
+  connection.send(JSON.stringify({
+    'header': makeHeader(),
+    'payload': payload
+  }));
 }
 
 /* Express */
 
-function startHTTPS() {
-  log("Starting HTTPS server");
-  if (ownHTTPserver) {
-    let sslCert;
-    let sslKey;
+function startHTTP(useSSL) {
+  log(`Started HTTP server, using SSL: ${useSSL}`);
+  const app = express();
+  const protocol = useSSL ? 'wss' : 'ws';
+  const ejsParams = (request) => {
+    return {
+      host: host,
+      prodID: getProdFromQuery(request),
+      serverName: serverName,
+      version: version,
+      protocol: protocol
+    }
+  }
 
+  if (useSSL) {
+    const serverOptions = {};
     try {
-      sslCert = fs.readFileSync(certPath, { encoding: 'utf8' });
+      serverOptions.cert = fs.readFileSync(certPath, { encoding: 'utf8' });
     } catch (e) {
       log("Could not load server SSL certificate", "E");
       process.exit(1);
     }
-
+  
     try {
-      sslKey = fs.readFileSync(keyPath, { encoding: 'utf8' });
+      serverOptions.key = fs.readFileSync(keyPath, { encoding: 'utf8' });
     } catch (e) {
       log("Could not load server SSL key", "E");
       process.exit(1);
     }
-
-    let options = {
-      cert: sslCert,
-      key: sslKey
-    };
-
-    const app = express();
-    const serverHTTPS = createServer(options, app);
-
-    serverHTTPS.on('upgrade', (request, socket, head) => {
-      log("Upgrade request received", "D");
-      coreServer.handleUpgrade(request, socket, head, socket => {
-        coreServer.emit('connection', socket, request);
-      });
-    });
-
-    app.set('views', __dirname + '/views');
-    app.set('view engine', 'ejs');
-    app.use(express.static('public'));
-
-    app.get('/', function(request, response) {
-      log("Serving tally page", "A");
-      response.header('Content-type', 'text/html');
-      let camera;
-      if (request.query.camera) {
-        camera = request.query.camera;
-      } else {
-        camera = 1;
-      }
-
-      response.render('tally', {
-        host: host,
-        camera: camera,
-        prodID: getProdFromQuery(request),
-        serverName: serverName
-      });
-    });
-
-    app.get('/config', function(request, response) {
-      log("Serving config page", "A");
-      response.header('Content-type', 'text/html');
-      response.render('config', {
-        host: host,
-        prodID: getProdFromQuery(request),
-        serverName: serverName
-      });
-    });
-    app.get('/productions', function(request, response) {
-      log("Serving config page", "A");
-      response.header('Content-type', 'text/html');
-      response.render('prod', {
-        host: host,
-        prodID: getProdFromQuery(request),
-        serverName: serverName
-      });
-    });
-    app.get('/mixer', function(request, response) {
-      log("Serving config page", "A");
-      response.header('Content-type', 'text/html');
-      response.render('mixer', {
-        host: host,
-        prodID: getProdFromQuery(request),
-        serverName: serverName
-      });
-    });
-    app.get('/servers', function(request, response) {
-      log("Serving config page", "A");
-      response.header('Content-type', 'text/html');
-      response.render('servers', {
-        host: host,
-        prodID: getProdFromQuery(request),
-        serverName: serverName,
-        version: version
-      });
-    });
-
-    app.get('/components/config', function(request, response) {
-      log("Sending config component", "A");
-      response.header('Content-type', 'text/html');
-      response.render('components/config', {get: request.query});
-    });
-    app.get('/components/server', function(request, response) {
-      log("Sending server component", "D");
-      let details = state.servers.getDetails(request.query.address)[request.query.address];
-      details.address = request.query.address;
-      response.header('Content-type', 'text/html');
-      response.render('components/server', {details: details});
-    });
-
-    return serverHTTPS;
-  } else {
-    return null;
   }
+
+  const server = useSSL ? https.createServer(serverOptions, app) : http.createServer(app);
+
+  app.set('views', __dirname + '/views');
+  app.set('view engine', 'ejs');
+  app.use(express.static('public'));
+
+  app.get('/', function(request, response) {
+    log("Serving tally page", "A");
+    response.header('Content-type', 'text/html');
+    const params = ejsParams(request);
+    params.camera = request.query.camera ? request.query.camera : 1;
+    response.render('tally', params);
+  });
+
+  app.get('/config', function(request, response) {
+    log("Serving config page", "A");
+    response.header('Content-type', 'text/html');
+    response.render('config', ejsParams(request));
+  });
+  app.get('/productions', function(request, response) {
+    log("Serving config page", "A");
+    response.header('Content-type', 'text/html');
+    response.render('prod', ejsParams(request));
+  });
+  app.get('/mixer', function(request, response) {
+    log("Serving config page", "A");
+    response.header('Content-type', 'text/html');
+    response.render('mixer', ejsParams(request));
+  });
+  app.get('/servers', function(request, response) {
+    log("Serving config page", "A");
+    response.header('Content-type', 'text/html');
+    response.render('servers', ejsParams(request));
+  });
+
+  app.get('/components/config', function(request, response) {
+    log("Sending config component", "A");
+    response.header('Content-type', 'text/html');
+    response.render('components/config', {get: request.query});
+  });
+  app.get('/components/server', function(request, response) {
+    log("Sending server component", "D");
+    let details = state.servers.getDetails(request.query.address)[request.query.address];
+    details.address = request.query.address;
+    response.header('Content-type', 'text/html');
+    response.render('components/server', {details: details});
+  });
+
+  return server;
 }
 
 function getProdFromQuery(request) {
@@ -1658,12 +1524,6 @@ async function loadConfig(fromFile = true) {
     await createConfig(false);
   }
 
-  if (typeof config.createLogFile !== "undefined") {
-    createLogFile = config.createLogFile;
-  } else {
-    createLogFile = true;
-  }
-
   if (typeof argLoggingLevel !== "undefined") {
     loggingLevel = argLoggingLevel;
   } else if (typeof config.loggingLevel !== "undefined") {
@@ -1672,71 +1532,28 @@ async function loadConfig(fromFile = true) {
     loggingLevel = "W"; //(A)LL,(D)EBUG,(W)ARN,(E)RROR
   }
 
-  if (typeof config.debugLineNum !== "undefined") {
-    debugLineNum = config.debugLineNum;
-  } else {
-    debugLineNum = false;
-  }
+  createLogFile = typeof config.createLogFile   !== "undefined" ? config.createLogFile  : true;
+  debugLineNum  = typeof config.debugLineNum    !== "undefined" ? config.debugLineNum   : false;
+  port          = typeof config.port            !== "undefined" ? config.port           : 443;
+  serverName    = typeof config.serverName      !== "undefined" ? config.serverName     : "WebTally Server v4";
+  printPings    = typeof config.printPings      !== "undefined" ? config.printPings     : false;
+  host          = typeof config.host            !== "undefined" ? config.host           : 'localhost';
+  useSSL        = typeof config.useSSL          !== "undefined" ? config.useSSL         : false;
+  certPath      = typeof config.certPath        !== "undefined" ? config.certPath       : "keys/"+host+".pem";
+  keyPath       = typeof config.keyPath         !== "undefined" ? config.keyPath        : "keys/"+host+".key";
+  dataBase      = typeof config.dataBase        !== "undefined" ? config.dataBase       : false;
 
-  if (typeof config.port !== "undefined") {
-    port = config.port;
-  } else {
-    port = 443;
-  }
-
-  if (typeof config.serverName !== "undefined") {
-    serverName = config.serverName;
-  } else {
-    serverName = "WebTally Server v4";
-  }
-
-  if (typeof config.printPings !== "undefined") {
-    printPings = config.printPings;
-  } else {
-    printPings = false;
-  }
-
-  if (typeof config.host !== "undefined") {
-    host = config.host;
-  } else {
-    host = 443;
-  }
-
-  if (typeof config.ownHTTPserver !== "undefined") {
-    ownHTTPserver = config.ownHTTPserver;
-  } else {
-    ownHTTPserver = false;
-  }
-
-  if (typeof config.certPath !== "undefined") {
-    certPath = config.certPath;
-  } else {
-    certPath = "keys/"+host+".pem";
-  }
-
-  if (typeof config.keyPath !== "undefined") {
-    keyPath = config.keyPath;
-  } else {
-    keyPath = "keys/"+host+".key";
-  }
-
-  if (typeof config.dataBase !== "undefined") {
-    dataBase = config.dataBase;
-  } else {
-    dataBase = false;
-  }
+  debugLineNum  = (debugLineNum   === "false" || debugLineNum   === false) ? false : true;
+  createLogFile = (createLogFile  === "false" || createLogFile  === false) ? false : true;
+  useSSL        = (useSSL         === "false" || useSSL         === false) ? false : true;
+  port = parseInt(port);
 
   if (typeof config.otherServers !== "undefined") {
-    for (var i = 0; i < config.otherServers.length; i++) {
+    for (let i = 0; i < config.otherServers.length; i++) {
       let entry = config.otherServers[i];
       state.servers.add(entry);
     }
   }
-
-  debugLineNum = (debugLineNum === "false" || debugLineNum === false) ? false : true;
-  createLogFile = (createLogFile === "false" || createLogFile === false) ? false : true;
-  ownHTTPserver = (ownHTTPserver === "false" || ownHTTPserver === false) ? false : true;
-  port = parseInt(port);
 
   const logsConfig = {
     "createLogFile": createLogFile,
@@ -1800,18 +1617,18 @@ async function createConfig(error = true) {
   let debugLineNum = reader.question("Would you like to print line numbers in the logs? true/false: ");
   let createLogFile = reader.question("Would you like to write the log to a file? true/false: ");
   let otherHost = reader.question("If possible provide the url/ip of another server in the network: ");
-  let ownHTTPserver = reader.question("Should this sever be it's own https server? true/false: ");
+  let useSSL = reader.question("Should this sever use an SSL certificate? true/false: ");
   let certPath;
   let keyPath;
-  if (ownHTTPserver == true || ownHTTPserver == "true") {
+  if (useSSL == true || useSSL == "true") {
     certPath = reader.question("Path to SSL certificate (normally .pem) eg. /keys/cert.pem: ");
     keyPath = reader.question("Path to SSL key (normally .key) eg. /keys/cert.key: ");
   }
 
   port = parseInt(port);
-  debugLineNum = (debugLineNum === "false" || debugLineNum === false) ? false : true;
-  createLogFile = (createLogFile === "false" || createLogFile === false) ? false : true;
-  ownHTTPserver = (ownHTTPserver === "false" || ownHTTPserver === false) ? false : true;
+  debugLineNum  = (debugLineNum === "false"   || debugLineNum === false)  ? false : true;
+  createLogFile = (createLogFile === "false"  || createLogFile === false) ? false : true;
+  useSSL        = (useSSL === "false"         || useSSL === false)        ? false : true;
 
   config = {
     "port":port,
@@ -1820,14 +1637,14 @@ async function createConfig(error = true) {
     "loggingLevel":loggingLevel,
     "debugLineNum":debugLineNum,
     "createLogFile":createLogFile,
-    "ownHTTPserver":ownHTTPserver,
+    "useSSL":useSSL,
     "dataBase":false,
     "otherServers":[]
   };
   if (otherHost !== "") {
     config.otherServers[0] = otherHost;
   }
-  if (ownHTTPserver == true || ownHTTPserver == "true") {
+  if (useSSL == true || useSSL == "true") {
     config.certPath = certPath;
     config.keyPath = keyPath;
   }
@@ -1863,7 +1680,7 @@ function loadArgs() {
 }
 
 logEvent.on('logSend', message => {
-  if (typeof coreServer !== "undefined") {
+  if (typeof serverWS !== "undefined") {
     const packet = makePacket({"command":"log","data":{"log":message}});
     sendAdmins(packet);
   }
@@ -1874,20 +1691,38 @@ logEvent.on('logSend', message => {
 async function folderExists(path, makeIfNotPresent = false) {
   let found = true;
   try {
-      await fs.promises.access(path);
+    await fs.promises.access(path);
   } catch (error) {
-      found = false;
-      if (makeIfNotPresent) {
-          log(`Folder: ${logs.y}(${path})${logs.reset} not found, creating it`, 'D');
-          try {
-              await fs.promises.mkdir(path, {'recursive': true});
-          } catch (error) {
-              log(`Couldn't create folder: ${logs.y}(${path})${logs.reset}`, 'W');
-              logObj('Message', error, "W");
-          }
-      } else {
-          log(`Folder: ${logs.y}(${path})${logs.reset} not found`, 'D');
+    found = false;
+    if (makeIfNotPresent) {
+      log(`Folder: ${logs.y}(${path})${logs.reset} not found, creating it`, 'D');
+      try {
+        await fs.promises.mkdir(path, {'recursive': true});
+      } catch (error) {
+        log(`Couldn't create folder: ${logs.y}(${path})${logs.reset}`, 'W');
+        logObj('Message', error, "W");
       }
+    } else {
+      log(`Folder: ${logs.y}(${path})${logs.reset} not found`, 'D');
+    }
   }
   return found;
+}
+
+async function readFile(path, content) {
+  try {
+    await fs.promises.access(path);
+    return await fs.promises.readFile(path);
+  } catch (error) {
+    if (typeof content === 'undefined') return;
+    log(`Folder/file: ${logs.y}(${path})${logs.reset} not found, creating it`, 'D');
+    try {
+      const folder = path.split('.')[0];
+      await fs.promises.mkdir(folder, {'recursive': true});
+      await fs.promises.writeFile(path, content);
+    } catch (error) {
+      log(`Couldn't create folder: ${logs.y}(${path})${logs.reset}`, 'W');
+      logObj('Message', error, "W");
+    }
+  }
 }

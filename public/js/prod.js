@@ -20,7 +20,7 @@ function socketDoMessage(packet, header, payload, e) {
       break;
     case "tally":
       let main = payload.busses.main;
-      for (var index in main) {
+      for (const index in main) {
         if (main.hasOwnProperty(index)) {
           if (main[index].prev == true) {
             $(".s_device[data-id='"+index+"']").addClass("green");
@@ -37,7 +37,7 @@ function socketDoMessage(packet, header, payload, e) {
       }
       break;
     case "clients":
-      for (var client in payload.clients) {
+      for (const client in payload.clients) {
         let thisData = payload.clients[client];
         if (payload.clients.hasOwnProperty(client) && thisData.type !== "Admin" && thisData.type !== "Config") {
 
@@ -72,7 +72,7 @@ function socketDoMessage(packet, header, payload, e) {
       break;
     case "server":
       console.log("adding new servers");
-      for (var server in payload.servers) {
+      for (const server in payload.servers) {
         if (payload.servers.hasOwnProperty(server)) {
           if (!servers.includes(server) && payload.servers[server].active == true) {
             servers.push(server);

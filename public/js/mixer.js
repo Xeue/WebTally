@@ -11,7 +11,7 @@ function socketDoMessage(packet, header, payload, e) {
   switch (payload.command) {
     case "server":
       console.log("adding new servers");
-      for (var server in payload.servers) {
+      for (const server in payload.servers) {
         if (payload.servers.hasOwnProperty(server)) {
           if (!servers.includes(server) && payload.servers[server].active == true) {
             servers.push(server);
@@ -93,7 +93,7 @@ function autoTrans(prog, prev) {
   conn.tally(0, "switch");
 }
 
-var clicker = false;
+let clicker = false;
 
 function clickerLoop() {
   if (clicker) {
