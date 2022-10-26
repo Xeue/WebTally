@@ -395,7 +395,7 @@ function stateServers(state) {
         for (const serverName in this.data) {
           if (this.data.hasOwnProperty(serverName)) {
             const server = this.data[serverName];
-            details[data] = {
+            details[serverName] = {
               'socket': "SOCKET OBJECT",
               'active': server.active,
               'connected': server.connected,
