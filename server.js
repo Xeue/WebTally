@@ -44,14 +44,6 @@ loadArgs();
 
 await loadConfig();
 const state = await setUpStates();
-
-if (typeof config.otherServers !== "undefined") {
-  for (let i = 0; i < config.otherServers.length; i++) {
-    let entry = config.otherServers[i];
-    state.servers.add(entry);
-  }
-}
-
 const serverWS = new WebSocketServer({ noServer: true });
 log("Started Websocket server");
 const serverHTTP = startHTTP(useSSL);
@@ -94,6 +86,13 @@ setInterval(() => {
 setInterval(() => {
   connectToOtherServers(true);
 }, 60000);
+
+if (typeof config.otherServers !== "undefined") {
+  for (let i = 0; i < config.otherServers.length; i++) {
+    let entry = config.otherServers[i];
+    state.servers.add(entry);
+  }
+}
 
 function doPing() {
   if (printPings) log("Doing ping", "A");
