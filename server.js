@@ -1430,9 +1430,10 @@ function startHTTP(useSSL) {
       protocol: protocol
     }
   }
+  
+  const serverOptions = {};
 
   if (useSSL) {
-    const serverOptions = {};
     try {
       serverOptions.cert = fs.readFileSync(certPath, { encoding: 'utf8' });
     } catch (e) {
