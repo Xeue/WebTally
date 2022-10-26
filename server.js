@@ -1495,7 +1495,7 @@ function startHTTP(useSSL) {
   });
   app.get('/components/server', function(request, response) {
     log("Sending server component", "D");
-    let details = state.servers.getDetails(request.query.address)[request.query.address];
+    let details = state.servers.getDetails(request.query.address);
     details.address = request.query.address;
     response.header('Content-type', 'text/html');
     response.render('components/server', {details: details});
