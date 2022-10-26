@@ -283,7 +283,7 @@ function stateServers(state) {
   state["servers"] = {
     "data":{},
     add(url, header, name) {
-      if (this.data.hasOwnProperty(url) && url !== host) {
+      if (!this.data.hasOwnProperty(url) && url !== host) {
         log("Adding new address: "+url, "D");
         this.data[url] = {
           "socket":null,
