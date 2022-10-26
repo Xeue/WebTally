@@ -186,10 +186,10 @@ function stateTally(state) {
       const savedBusses = typeof this.data[source] == "undefined" ? {} : this.data[source];
 
       for (const busName in busses) {
-        if (!busses.hasOwnProperty(busName)) {
+        if (busses.hasOwnProperty(busName)) {
           const bus = busses[busName];
           for (const camNum in bus) {
-            if (!bus.hasOwnProperty(camNum)) {
+            if (bus.hasOwnProperty(camNum)) {
               const cam = bus[camNum];
               const savedBus = typeof savedBusses[busName] == "undefined" ? this.newBus(busName, source) : savedBusses[busName];
     
@@ -283,7 +283,7 @@ function stateServers(state) {
   state["servers"] = {
     "data":{},
     add(url, header, name) {
-      if (!this.data.hasOwnProperty(url) && url !== host) {
+      if (this.data.hasOwnProperty(url) && url !== host) {
         log("Adding new address: "+url, "D");
         this.data[url] = {
           "socket":null,
@@ -393,7 +393,7 @@ function stateServers(state) {
       const details = {};
       if (server == "ALL") {
         for (const serverName in this.data) {
-          if (!this.data.hasOwnProperty(serverName)) {
+          if (this.data.hasOwnProperty(serverName)) {
             const server = this.data[serverName];
             details[data] = {
               'socket': "SOCKET OBJECT",
@@ -408,7 +408,7 @@ function stateServers(state) {
         }
 
         for (const detail in details) {
-          if (!details.hasOwnProperty(detail)) {
+          if (details.hasOwnProperty(detail)) {
             if (details[detail].connected) {
               details[detail].socket = "SOCKET OBJECT";
             } else {
@@ -583,9 +583,6 @@ function stateClients(state) {
         } else {
           delete clientsData[socket];
         }
-        clientsData[socket].socket = false;
-        clientsData[socket].connected = false;
-        clientsData[socket].pingStatus = "dead";
       } else {
         if ( socket.type == "Server"
           || socket.type == "Config"
@@ -606,21 +603,22 @@ function stateClients(state) {
       const clientBySocket = clientsData[socket.ID];
       if (socket == "ALL") {
         for (const clientID in clientsData) {
-          if (!clientsData.hasOwnProperty(clientID)) return;
-          const client = clientsData[clientID];
-          details[clientID] = {
-            'camera': client.camera,
-            'name': client.name,
-            'connected': client.connected,
-            'prodID': client.prodID,
-            'type': client.type,
-            'version': client.version,
-            'local': client.local
+          if (clientsData.hasOwnProperty(clientID)) {
+            const client = clientsData[clientID];
+            details[clientID] = {
+              'camera': client.camera,
+              'name': client.name,
+              'connected': client.connected,
+              'prodID': client.prodID,
+              'type': client.type,
+              'version': client.version,
+              'local': client.local
+            };
+            if (client.local == true) {
+              details[clientID].pingStatus = client.pingStatus;
+              details[clientID].socket = "SOCKET OBJECT";
+            }
           };
-          if (client.local == true) {
-            details[clientID].pingStatus = client.pingStatus;
-            details[clientID].socket = "SOCKET OBJECT";
-          }
         }
         if (print === true) {
           logObj("Clients details", details, "A");
