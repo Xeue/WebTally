@@ -45,6 +45,13 @@ loadArgs();
 await loadConfig();
 const state = await setUpStates();
 
+if (typeof config.otherServers !== "undefined") {
+  for (let i = 0; i < config.otherServers.length; i++) {
+    let entry = config.otherServers[i];
+    state.servers.add(entry);
+  }
+}
+
 const serverWS = new WebSocketServer({ noServer: true });
 log("Started Websocket server");
 const serverHTTP = startHTTP(useSSL);
@@ -1430,7 +1437,7 @@ function startHTTP(useSSL) {
       protocol: protocol
     }
   }
-  
+
   const serverOptions = {};
 
   if (useSSL) {
@@ -1548,13 +1555,6 @@ async function loadConfig(fromFile = true) {
   createLogFile = (createLogFile  === "false" || createLogFile  === false) ? false : true;
   useSSL        = (useSSL         === "false" || useSSL         === false) ? false : true;
   port = parseInt(port);
-
-  if (typeof config.otherServers !== "undefined") {
-    for (let i = 0; i < config.otherServers.length; i++) {
-      let entry = config.otherServers[i];
-      state.servers.add(entry);
-    }
-  }
 
   const logsConfig = {
     "createLogFile": createLogFile,

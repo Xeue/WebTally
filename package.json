@@ -1,6 +1,6 @@
 {
   "name": "webtally-node",
-  "version": "4.2.1",
+  "version": "4.2.2",
   "description": "The server application for for Sam Chilton's WebTally system",
   "main": "server.js",
   "type": "module",
@@ -12,7 +12,7 @@
     "readline": "^1.3.0",
     "readline-sync": "^1.4.10",
     "ws": "^8.10.0",
-    "xeue-logs": "^1.1.5"
+    "xeue-logs": "^1.1.6"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
