@@ -28,12 +28,14 @@ let serverID = `S_${loadTime}_${version}`
 	config.useLogger(logs)
 
 	config.default('useSSL', false)
+	config.default('SSLProxy', true)
 	config.default('port', 8080)
 	config.default('serverName', 'WebTally Server v4')
 	config.default('loggingLevel', 'W')
 	config.default('createLogFile', true)
 	config.default('debugLineNum', false)
 	config.default('printPings', false)
+	config.default('dataBase', false)
 
 	config.require('port', [], 'What port shall the server use')
 	config.require('host', [], 'What url/IP is the server connected to from')
@@ -42,11 +44,14 @@ let serverID = `S_${loadTime}_${version}`
 	config.require('loggingLevel', ['A', 'D', 'W', 'E'], 'What logging level would you like? (A)ll (D)ebug (W)arnings (E)rror')
 	config.require('debugLineNum', [true, false], 'Would you like to print line numbers in the logs? true/false')
 	config.require('createLogFile', [true, false], 'Would you like to write the log to a file? true/false')
+	config.require('dataBase', [true, false], 'Would you like to use local database')
 	config.require('otherHost', [], 'If possible provide the url/ip of another server in the network')
 	config.require('useSSL', [true, false], 'Should this sever use an SSL certificate? true/false')
 	{
 		config.require('certPath', [], 'Path to SSL certificate (normally .pem) eg. /keys/cert.pem', ['useSSL', true])
 		config.require('keyPath', [], 'Path to SSL key (normally .key) eg. /keys/cert.key', ['useSSL', true])
+		config.require('SSLProxy', [], 'Is the server sat behind an SSL secured proxy', ['useSSL', false])
+
 	}
 
 	if (!await config.fromFile(__dirname + '/config.conf')) {
@@ -1508,7 +1513,7 @@ function sendData(connection, payload) {
 function startHTTP(useSSL) {
 	log(`Started HTTP server, using SSL: ${useSSL}`)
 	const app = express()
-	const protocol = useSSL ? 'wss' : 'ws'
+	const protocol = config.get('SSLProxy') ? 'wss' : 'ws'
 	const ejsParams = (request) => {
 		return {
 			host: config.get('host'),
